@@ -18,12 +18,50 @@ jobs:
       - name: Pack codebase with Repomix
         run: npx repomix --style xml --output repomix-output.xml
           
-      # Solução 2: Usa uma Action alternativa e estável para o Google Drive
-      - name: Upload to Google Drive
-        uses: adityak74/google-drive-upload-git-action@main
+      # Solução 2: Upload NATIVO com Python (Sem usar actions de terceiros, 100% à prova de falhas)
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
-          filename: 'repomix-output.xml'
-          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
-          name: 'repomix-output.xml'
-          overwrite: "true"
+          python-version: '3.10'
+          
+      - name: Install Google API Client
+        run: pip install google-api-python-client google-auth
+          
+      - name: Upload to Google Drive
+        env:
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: |
+          cat << 'EOF' > upload.py
+          import os
+          import json
+          from google.oauth2 import service_account
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+
+          creds_info = json.loads(os.environ['GDRIVE_CREDENTIALS'])
+          creds = service_account.Credentials.from_service_account_info(
+              creds_info, 
+              scopes=['https://www.googleapis.com/auth/drive']
+          )
+          service = build('drive', 'v3', credentials=creds)
+
+          folder_id = os.environ['GDRIVE_FOLDER_ID']
+          file_name = 'repomix-output.xml'
+
+          query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
+          results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+          files = results.get('files', [])
+
+          media = MediaFileUpload(file_name, mimetype='application/xml', resumable=True)
+
+          if files:
+              file_id = files[0]['id']
+              service.files().update(fileId=file_id, media_body=media).execute()
+              print(f"Successfully updated {file_name} in Google Drive!")
+          else:
+              file_metadata = {'name': file_name, 'parents': [folder_id]}
+              service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+              print(f"Successfully uploaded {file_name} to Google Drive!")
+          EOF
+          python upload.py
