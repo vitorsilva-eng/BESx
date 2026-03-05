@@ -20,11 +20,10 @@ jobs:
           
       # Solução 2: Usa uma Action alternativa e estável para o Google Drive
       - name: Upload to Google Drive
-        uses: hoatruongdev09/upload-file-to-google-drive@v1.1
+        uses: adityak74/google-drive-upload-git-action@main
         with:
-          file-path: 'repomix-output.xml'
-          service-account-json: ${{ secrets.GDRIVE_CREDENTIALS }}
-          upload-name: 'repomix-output.xml'
-          upload-to-folder-id: ${{ secrets.GDRIVE_FOLDER_ID }}
-          # Nota: O erro de digitação (dois 'r') é obrigatório pois está assim no código original da extensão
-          overrwrite: 'true'
+          credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
+          filename: 'repomix-output.xml'
+          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
+          name: 'repomix-output.xml'
+          overwrite: "true"
