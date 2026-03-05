@@ -72,6 +72,7 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
     logger.info(f"[BatterySim] Config: Rs_cel={cfg_bat.Rs}, Rend={cfg_bat.rendimento_pcs}, SOH={soh_atual:.2f}, SOC=[{soc_min_clip*100:.1f}-{soc_max_clip*100:.1f}]%")
     
     for k in range(n_passos - 1):
+        
         # Delta T em horas
         dt_h = (tempos_min_arr[k + 1] - tempos_min_arr[k]) / 60.0
         

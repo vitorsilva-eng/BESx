@@ -26,4 +26,8 @@ jobs:
           target: repomix-output.xml
           credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
           parent_folder_id: ${{ secrets.GDRIVE_FOLDER_ID }}
+<<<<<<< Updated upstream
           replace_mode: update_in_place
+=======
+          replace_mode: update_in_place
+>>>>>>> Stashed changes
