@@ -1,66 +1,63 @@
-# BESx - Simulação de Degradação de Baterias (BESS)
+# 🔋 BESx - Battery Energy Storage Simulator
 
-Este projeto realiza a simulação de sistemas de armazenamento de energia em baterias (BESS), integrando modelos de degradação com simulações elétricas via PLECS.
+O **BESx** é um simulador avançado de sistemas de armazenamento de energia em baterias (BESS), focado em modelagem de degradação baseada na física (Physics-Informed) e teoria de fadiga. O projeto é estruturado em uma arquitetura limpa, separando o motor de simulação (Core) da interface visual interativa (Dashboards).
 
-O objetivo principal é avaliar a degradação da bateria (perda de SOH - State of Health) ao longo do tempo, considerando tanto o envelhecimento cíclico (Rainflow) quanto o envelhecimento calendárico.
+---
 
-## Funcionalidades Principais
+## 🎯 Visão Geral e Capacidades
 
-- **Integração com PLECS**: Comunicação via XML-RPC para executar simulações elétricas.
-- **Modelo de Degradação**: Cálculos de dano por ciclo (DOD, SOC médio, Temperatura) e calendário (Tempo, SOC, Temperatura).
-- **Gerenciamento de Resultados**:
-  - Criação automática de pastas por simulação (`results/sim_YYYYMMDD_HHMMSS/`).
-  - Geração de relatórios automáticos (`report.txt`).
-  - Salvamento de gráficos e planilhas de debug organizados.
-- **Modularidade**: Código estruturado em pacote Python (`besx_app`).
+- **Simulação Científica Precisa:** Utiliza o *Modelo Empírico de Stroe* e o algoritmo de *Rainflow Cycle Counting* para extrair microciclos (DOD e SOC Médio) e calcular os danos cumulativos da bateria com precisão rigorosa.
+- **Acumulação Não-Linear Estrita:** A degradação (cíclica e calendárica) obedece estritamente a regras de potência e modelos geométricos, descartando somas lineares irreais (Miner-Stroe rules).
+- **Extensibilidade Híbrida (PIML):** Arquitetura desenhada estruturalmente para integração contínua com camadas de Aprendizado de Máquina (Physics-Informed Machine Learning), operando sobre a modelagem de resíduos.
+- **Monitoramento e Validação Contínua:** Módulo visual especializado (Engine Validation) para atestar em tempo real o funcionamento comparativo das regras físicas durante transientes de energia.
 
-## Estrutura do Projeto
+---
 
+## 🏗️ Estrutura e Arquitetura do Projeto
+
+O projeto segue os princípios de separação de responsabilidade, garantindo que as lógicas pesadas O(n) não contaminem a reatividade da interface.
+
+- `src/besx/domain/`: Lógica central, equações diferenciais, motor empírico de simulação e contagem iterativa de fadiga.
+- `src/besx/entrypoints/`: Estruturação das duas vias independentes de acesso:
+  - `cli/`: Interface de linha de comando para simulações Headless seguras.
+  - `dashboard/`: A interface do **Streamlit** (arquitetura reativa, com state management forte usando `st.session_state` e `@st.cache_data`).
+- `database/`: Armazenamento padronizado de referências de catálogos e parâmetros eletroquímicos nominais.
+- `data/` & `results/`: Dutos de I/O para injeção de perfis de energia (telemetria) e consolidação analítica.
+
+---
+
+## 🚀 Guia de Execução (Getting Started)
+
+### 1. Requisitos do Sistema
+- **Python 3.11+**
+- Gerenciador de dependências configurado (instalação stricta com as bibliotecas marcadas no `pyproject.toml` para garantir durabilidade e evitar "Environment Smells").
+
+### 2. Iniciando o Dashboard de Visualização
+O ambiente visual pode ser inicializado utilizando o utilitário configurado:
 ```bash
-BESx/
-├── besx_app/              # Pacote principal da aplicação
-│   ├── core/              # Lógica de simulação e conexão com PLECS
-│   ├── models/            # Modelos matemáticos de degradação
-│   └── utils/             # Manipulação de dados, plots e arquivos
-├── database/              # Pasta para colocar seus arquivos de entrada (.mat, .csv)
-├── results/               # Saída das simulações (criado automaticamente)
-├── tests/                 # Testes unitários
-├── config.py              # Arquivo de configuração central
-├── main.py                # Script de execução
-└── requirements.txt       # Dependências
+./run_dashboard.bat
 ```
 
-## Pré-requisitos
-
-1. **Python 3.8+**
-2. **PLECS Standalone**: Com o servidor XML-RPC habilitado (padrão na porta 1080).
-    - O modelo `bess_batch_mode.plecs` deve estar acessível conforme configurado em `config.py`.
-
-## Instalação
-
-1. Clone este repositório.
-2. Instale as dependências:
-
+### 3. Iniciando Modo CLI (Batch / Terminal)
+Para executar rastreios analíticos puros sem a sobrecarga das bibliotecas de renderização, utilize a interface de linha de comando:
 ```bash
-pip install -r requirements.txt
+./run_cli.bat
 ```
 
-## Como Usar
+---
 
-1. **Configuração**:
-    - Ajuste os parâmetros em `config.py` (capacidade, dados de entrada, limites).
-    - Coloque seus arquivos de dados na pasta `database/`.
+## 🛠️ Diretrizes Rigorosas de Desenvolvimento
 
-2. **Execução**:
-    - Certifique-se que o PLECS está aberto com o servidor XML-RPC ativo.
-    - Rode o script:
+Toda colaboração e alteração no repositório **devem** obedecer aos padrões internos descritos abaixo (e detalhados em `besx-standards.md`):
 
-```bash
-python main.py
-```
+1. **Tipagem Estática (Type Hints):** 100% obritagório em novas assinaturas.
+2. **Documentação Acadêmica:** Funções de cálculo base devem apresentar Docstrings no formato Google ou NumPy formatado com as deduções paramétricas.
+3. **Observabilidade (No Prints):** Proibido o uso de `print()`. Utilizar os singletons predefinidos em `besx_app.utils.logger`.
+4. **Pydantic Native:** Estruturas complexas (Dutos de Dados e Configurações) devem ser modeladas usando Pydantic, impedindo a injeção falha por dicionários cegos.
+5. **Independência de Trajetos (OS Pathing):** Abolição definitiva de caminhos duros inter-drives do sistema. As rotas devem ser deduzidas internamente em tempo de construção.
 
-1. **Resultados**:
-    - A cada execução, uma nova pasta será criada em `results/` com a data e hora.
-    - Verifique `report.txt` para um resumo rápido.
-    - Gráficos estarão em `results/.../plots/`.
-    - Dados detalhados em `results/.../data/` e `results/.../debug/`.
+---
+
+## 📜 Licença e Referências
+*Property of BESx Team.*
+Consulte os administradores de núcleo (Lead Software Engineering e Core Data Science) para requisição de Merge Requests e discussões arquiteturais.
