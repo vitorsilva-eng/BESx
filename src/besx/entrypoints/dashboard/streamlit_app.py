@@ -10,6 +10,13 @@ import json
 import ast
 
 import importlib
+import sys
+
+# Garante que a raiz do pacote (a pasta 'src') esteja acessível sem precisar de PYTHONPATH
+src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
 # Internal imports
 import besx.config
 import besx.domain.models.degradation_model
@@ -1064,12 +1071,7 @@ with tab_val:
             with st.expander(f"📈 3. Degradação Não-Linear (Stroe) - {'🟢 PASS' if assertions.get('stroe_nonlinear', {}).get('pass') else '🔴 FAIL'}", expanded=False):
                 col_info, col_graph = st.columns([3, 4])
                 with col_info:
-                    st.markdown("""
-                    **Objetivo:** Validar a regra de acumulação quadrática de dano cíclico.
-                    
-                    **Expectativa:** Dano total aos 12 meses deve ser $\sqrt{12} \\approx 3.46$ vezes o dano do primeiro mês.
-                    """)
-                    
+                    st.markdown(r""" **Objetivo:** Validar a regra de acumulação quadrática de dano cíclico. """)                    
                     ast_tc3 = assertions.get("stroe_nonlinear", {"pass": False, "msg": "Teste não executado"})
                     if ast_tc3["pass"]:
                         st.success(ast_tc3["msg"])
