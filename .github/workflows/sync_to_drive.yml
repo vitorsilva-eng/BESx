@@ -16,7 +16,7 @@ jobs:
         
       # Solução 1: Roda o Repomix diretamente via npx (sem usar a action de terceiros)
       - name: Pack codebase with Repomix
-        run: npx repomix --style xml --output repomix-output.xml
+        run: npx repomix --style markdown --output repomix-output.md
           
       # Solução 2: Upload NATIVO com Python (Sem usar actions de terceiros, 100% à prova de falhas)
       - name: Set up Python
@@ -57,7 +57,7 @@ jobs:
           )
           
           service = build('drive', 'v3', credentials=creds)
-          file_name = 'repomix-output.xml'
+          file_name = 'repomix-output.md'
 
           try:
               # Verifica se a pasta existe e está acessível
@@ -72,7 +72,7 @@ jobs:
               results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
               files = results.get('files', [])
 
-              media = MediaFileUpload(file_name, mimetype='application/xml', resumable=True)
+              media = MediaFileUpload(file_name, mimetype='text/markdown', resumable=True)
 
               if files:
                   file_id = files[0]['id']
