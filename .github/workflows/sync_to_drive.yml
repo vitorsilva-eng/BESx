@@ -14,20 +14,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         
+      # Solução 1: Roda o Repomix diretamente via npx (sem usar a action de terceiros)
       - name: Pack codebase with Repomix
-        uses: yamadashy/repomix-action@v1
-        with:
-          style: xml
-          output: repomix-output.xml
+        run: npx repomix --style xml --output repomix-output.xml
           
+      # Solução 2: Usa uma Action alternativa e estável para o Google Drive
       - name: Upload to Google Drive
-        uses: Jumbo810/upload-github-actions-artifacts-to-google-drive@v2.3.3
+        uses: hoatruongdev09/upload-file-to-google-drive@v1.1
         with:
-          target: repomix-output.xml
-          credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
-          parent_folder_id: ${{ secrets.GDRIVE_FOLDER_ID }}
-<<<<<<< Updated upstream
-          replace_mode: update_in_place
-=======
-          replace_mode: update_in_place
->>>>>>> Stashed changes
+          file-path: 'repomix-output.xml'
+          service-account-json: ${{ secrets.GDRIVE_CREDENTIALS }}
+          upload-name: 'repomix-output.xml'
+          upload-to-folder-id: ${{ secrets.GDRIVE_FOLDER_ID }}
+          # Nota: O erro de digitação (dois 'r') é obrigatório pois está assim no código original da extensão
+          overrwrite: 'true'
