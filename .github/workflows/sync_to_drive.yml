@@ -1,33 +1,29 @@
 name: Sync Codebase to Google Drive
 
-# Define quando essa automação vai rodar
 on:
   push:
     branches:
-      - main  # Roda automaticamente sempre que você enviar código para a main
-  workflow_dispatch: # Cria um botão para você rodar manualmente quando quiser
+      - main
+  workflow_dispatch:
 
 jobs:
   pack-and-upload:
     runs-on: ubuntu-latest
     
     steps:
-      # Passo 1: Baixa o seu código na máquina virtual
       - name: Checkout repository
         uses: actions/checkout@v4
         
-      # Passo 2: Usa o Repomix para empacotar todos os arquivos num arquivo de texto
       - name: Pack codebase with Repomix
         uses: yamadashy/repomix-action@v1
         with:
-          style: xml # O formato XML é o mais amigável e otimizado para IAs
+          style: xml
           output: repomix-output.xml
           
-      # Passo 3: Envia o arquivo finalizado direto para o seu Google Drive
       - name: Upload to Google Drive
         uses: Jumbo810/upload-github-actions-artifacts-to-google-drive@v2.3.3
         with:
           target: repomix-output.xml
           credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
           parent_folder_id: ${{ secrets.GDRIVE_FOLDER_ID }}
-          replace_mode: update_in_place # Atualiza o arquivo existente para não criar duplicatas
+          replace_mode: update_in_place
