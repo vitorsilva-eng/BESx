@@ -120,25 +120,39 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
         else:
             v_term_estimada = v_ocv_banco
             
-        # Registra valores
+        # Coulomb Counting Inicial (na célula)
+        corrente_celula = corrente_banco / cfg_bat.Np
+        delta_soc_req = (corrente_celula * dt_h / q_efetivo_celula)  # [0-1]
+        
+        # Atualiza e clipa o SOC
+        soc_novo = np.clip(soc_out[k] + delta_soc_req, soc_min_clip, soc_max_clip)
+        delta_soc_real = soc_novo - soc_out[k]
+
+        # Se o SOC bateu no limite (bateria cheia ou vazia), a corrente real foi menor
+        if abs(delta_soc_real) < abs(delta_soc_req) and abs(delta_soc_req) > 1e-9:
+            corrente_celula_real = delta_soc_real * q_efetivo_celula / dt_h
+            corrente_banco = corrente_celula_real * cfg_bat.Np
+            
+            # Recalcula a tensão terminal real com a corrente reduzida
+            if rs_banco > 1e-7:
+                 v_term_estimada = v_ocv_banco + (corrente_banco * rs_banco)
+            else:
+                 v_term_estimada = v_ocv_banco
+
+        # Registra valores reais finais
         corrente_out[k] = corrente_banco
         tensao_term_out[k] = v_term_estimada
         
-        # Potência CA Real Aplicada (após limitações de Tensão/BMS)
+        # Potência CA Real Aplicada (após limitações de Tensão/BMS e SOC_max)
         # P_ca = P_dc / rendimento (se I > 0 / Carga) ou P_ca = P_dc * rendimento (se I < 0 / Descarga)
         p_dc_real = v_term_estimada * corrente_banco
         if corrente_banco > 0:
             pot_ca_out[k] = p_dc_real / cfg_bat.rendimento_pcs
-        else:
+        elif corrente_banco < 0:
             pot_ca_out[k] = p_dc_real * cfg_bat.rendimento_pcs
+        else:
+            pot_ca_out[k] = 0.0
 
-        # Coulomb Counting (na célula)
-        corrente_celula = corrente_banco / cfg_bat.Np
-        delta_soc = (corrente_celula * dt_h / q_efetivo_celula)  # [0-1]
-        
-        # Atualiza e clipa o SOC
-        soc_novo = np.clip(soc_out[k] + delta_soc, soc_min_clip, soc_max_clip)
-        
         soc_out[k + 1] = soc_novo
         
     # Salva o último passo de corrente/tensão (mantém o valor anterior para não zerar)
