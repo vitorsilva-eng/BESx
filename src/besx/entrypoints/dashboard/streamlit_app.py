@@ -604,14 +604,18 @@ with tab_live:
         cfg.simulacao.MESES_SIMULACAO = meses_total_sim
         
         with st.spinner("Motor de Simulação em Execução..."):
-            sim = SimulationManager(
-                cfg, backend=backend, data_file=data_file_sidebar,
-                on_mes_complete=live_callback, sim_until_eol=sim_eol_mode
-            )
-            sim.run()
-        
-        st.session_state.sim_status = "finished"
-        st.rerun()
+            try:
+                sim = SimulationManager(
+                    cfg, backend=backend, data_file=data_file_sidebar,
+                    on_mes_complete=live_callback, sim_until_eol=sim_eol_mode
+                )
+                sim.run()
+                st.session_state.sim_status = "finished"
+            except Exception as e:
+                st.error(f"Ocorreu um erro durante a simulação: {e}")
+                st.session_state.sim_status = "idle"
+            finally:
+                st.rerun()
 
     # Render Persistent State (Quando não está rodando)
     if not st.session_state.sim_results.empty and st.session_state.sim_status != "running":
