@@ -54,29 +54,45 @@ jobs:
           try:
               # Verifica se a pasta existe e está acessível
               try:
-                  service.files().get(fileId=folder_id, fields="id, name").execute()
+                  service.files().get(fileId=folder_id, fields="id, name", supportsAllDrives=True).execute()
               except HttpError as e:
                   if e.resp.status == 404:
                       print(f"\n[ERRO] A pasta com ID '{folder_id}' não foi encontrada!")
                       print(f"Por favor, certifique-se de que você COMPARTILHOU a pasta do Google Drive com o email da conta de serviço:")
                       print(f"-> {creds_info['client_email']} <- (Permissão: Editor)")
+                      print(f"Verifique também se o ID da pasta está correto (é o código no final da URL da pasta).")
                   else:
                       print(f"Erro ao acessar a pasta: {e}")
                   sys.exit(1)
 
               query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
-              results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+              results = service.files().list(
+                  q=query, 
+                  spaces='drive', 
+                  fields='files(id, name)',
+                  includeItemsFromAllDrives=True,
+                  supportsAllDrives=True
+              ).execute()
               files = results.get('files', [])
 
               media = MediaFileUpload(file_name, mimetype='application/xml', resumable=True)
 
               if files:
                   file_id = files[0]['id']
-                  service.files().update(fileId=file_id, media_body=media).execute()
+                  service.files().update(
+                      fileId=file_id, 
+                      media_body=media,
+                      supportsAllDrives=True
+                  ).execute()
                   print(f"Successfully updated {file_name} in Google Drive!")
               else:
                   file_metadata = {'name': file_name, 'parents': [folder_id]}
-                  service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                  service.files().create(
+                      body=file_metadata, 
+                      media_body=media, 
+                      fields='id',
+                      supportsAllDrives=True
+                  ).execute()
                   print(f"Successfully uploaded {file_name} to Google Drive!")
                   
           except Exception as ex:
