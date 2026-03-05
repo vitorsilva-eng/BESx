@@ -1,0 +1,73 @@
+# 🔍 Relatório de Diagnóstico do Modelo PLECS ([bess_batch_mode.plecs](file:///c:/Users/Ledax/OneDrive%20-%20LEDAX/%C3%81rea%20de%20Trabalho/BESx/bess_batch_mode.plecs))
+
+## Resumo Exame Causa-Efeito
+As discrepâncias observadas (diferença no comportamento de soc e imunidade as inserções dinâmicas do Python) ocorrem por uma combinação da reinicialização violenta das variáveis pelo PLECS no WorkSpace e pelo corte "Hard-Cut" no Bloco de C-Script responsável pela injeção da corrente. 
+
+Abaixo segue o mapeamento reverso dos requisitos solicitados.
+
+---
+
+### 1. Topologia da Bateria (Battery Model)
+O esquemático no PLECS implementa estritamente o modelo de resistência interna ideal (**Rint Model**) simples.
+
+*   **Circuito Interno:** Há apenas um `VoltageSource V` (Fonte de Tensão controlada) e um único `Resistor R1`. Diferentemente de estágios com capacitores (Thevenin), a dinâmica dielétrica é omitida e a resistência é modelada pela constante algébrica `Rs_inicial = Rs*Ns/Np`.
+*   **Vetor OCV (Open Circuit Voltage):** 
+    O OCV depende diretamente de um bloco lookup de 1 Dimensão (`Lookup1D \`SOC x VOC\``). Contudo, **os vetores do bloco (eixo X: `SOC`, Eixo Y: `OCV`) não dependem das dinâmicas repassadas temporalmente.** Eles dependem do vetor lido no passo de inicialização do circuito.
+
+---
+
+### 2. Malhas de Controle e Limitações (Control Loops & Limiters)
+Não há controladores analógicos pesados (PI de corrente), mas um controlador algorítmico incorporado ativamente via `C-Script`. O comportamento conservador no teste de ciclo completo que limitou a variação do SOC (84% e 9%) **é causado pela condição rígida neste código interno**:
+
+```c
+// Lógica Extraída do Bloco "C-Script"
+if (pot > 0.0f) {
+    if (pot > P_BESS) pot = P_BESS; // Saturação do inversor
+
+    if (SOC < SOC_MAX) { // Corte abrupto (Hard Cut) no topo
+        I = (pot * ETA) / V_BAT;
+        I_SET = I;
+        STATE = 1;
+    }
+}
+else if (pot < 0.0f) {
+    if (pot < -P_BESS) pot = -P_BESS; // Saturação do inversor
+
+    if (SOC > SOC_MIN) { // Corte abrupto (Hard Cut) no piso
+        I = (pot / ETA) / V_BAT;
+        I_SET = I;
+        STATE = -1;
+    }
+}
+```
+
+> [!CAUTION]
+> **A Causa Principal:**
+> O controlador zera imediatamente e bruscamente a requisição de corrente (`I_SET = 0.0f;` padrão) e a flag (`STATE = 0;`) assim que a telemetria do `SOC` encosta em `SOC_MAX` ou `SOC_MIN` matematicamente. Se no seu Python a lógica permitia o escoamento residual ou passava da banda (chegando a 91% e 0.1%), o PLECS desativa rigorosamente ao bater na condição algébrica, não fornecendo mais potência para carregar/descarregar.
+
+---
+
+### 3. Interface de Variáveis (Workspace Mapping) e Conflito Python-RPC
+No Bloco de rotina `InitializationCommands` (convertido a partir do binário XML "base64"), as seguintes variáveis estão declaradas fisicamente com valores rígidos:
+
+```matlab
+% === CONTRATO PYTHON <-> PLECS ===
+% Todas as variáveis abaixo são sobrescritas pelo Python
+Ah = 280;
+SOC_0 = 0.5;
+SOC = [0 0.05 0.1 0.15 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1];
+OCV = [3.47 3.51 3.56 3.63 3.69 3.77 3.79 3.81 3.87 3.93 4.00 4.10 4.17];
+Ns = 260;
+Np = 1;
+Rs = 0.0001;
+SocMin = 0.2;
+SocMax = 0.8;
+P_BESS = 125000;
+Escala_Tempo = 1;
+```
+
+> [!WARNING]
+> **Sobrescrita do Workspace:**
+> O PLECS avalia as `InitializationCommands` assim que a simulação é engatilhada. Quando você passa o Dicionário via XML-RPC antes do envio do comando de marcha, suas variáveis *existem* momentaneamente, mas são quase imediatamente obliteradas e zeradas com os valores padrões injetados pelo código interno acima (`Rs=0.0001`, vetor OCV chumbado, etc.).
+> 
+> **A Solução:** Para testes dinâmicos comanda pelo Python (zerar resistência ou planificar OCV durante ondas quadradas), **toda essa rotina de inicialização no próprio PLECS precisa ser limpa/deletada**. O XML-RPC do Python deve ser o único formador de escopo de variáveis no WorkSpace principal para este circuito.
