@@ -466,7 +466,15 @@ pasta_db = 'database'
 arquivos_db = [f for f in os.listdir(pasta_db) if f.endswith(('.mat', '.csv'))] if os.path.exists(pasta_db) else []
 data_file_sidebar = st.sidebar.selectbox("Perfil de Dados", arquivos_db if arquivos_db else ["Vazio"], disabled=is_running)
 battery_prof = st.sidebar.selectbox("Bateria", list(PERFIS_BATERIA.keys()), disabled=is_running)
-backend = st.sidebar.radio("Backend", ["plecs","python"], horizontal=True, disabled=is_running)
+# Detecta se está rodando no Streamlit Community Cloud (via presença de variável de ambiente característica)
+is_cloud = os.environ.get("HOSTNAME", "").startswith("streamlit") or "STREAMLIT_SERVER_PORT" in os.environ
+
+if is_cloud:
+    st.sidebar.info("☁️ Rodando na nuvem: Backend PLECS indisponível.")
+    backend = st.sidebar.radio("Backend", ["python"], horizontal=True, disabled=True, index=0)
+else:
+    backend = st.sidebar.radio("Backend", ["plecs", "python"], horizontal=True, disabled=is_running, index=1)
+
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔋 Limites de SOC")
