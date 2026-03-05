@@ -34,10 +34,12 @@ jobs:
         run: |
           cat << 'EOF' > upload.py
           import os
+          import sys
           import json
           from google.oauth2 import service_account
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
+          from googleapiclient.errors import HttpError
 
           creds_info = json.loads(os.environ['GDRIVE_CREDENTIALS'])
           creds = service_account.Credentials.from_service_account_info(
@@ -46,22 +48,39 @@ jobs:
           )
           service = build('drive', 'v3', credentials=creds)
 
-          folder_id = os.environ['GDRIVE_FOLDER_ID']
+          folder_id = os.environ['GDRIVE_FOLDER_ID'].strip()
           file_name = 'repomix-output.xml'
 
-          query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
-          results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
-          files = results.get('files', [])
+          try:
+              # Verifica se a pasta existe e está acessível
+              try:
+                  service.files().get(fileId=folder_id, fields="id, name").execute()
+              except HttpError as e:
+                  if e.resp.status == 404:
+                      print(f"\n[ERRO] A pasta com ID '{folder_id}' não foi encontrada!")
+                      print(f"Por favor, certifique-se de que você COMPARTILHOU a pasta do Google Drive com o email da conta de serviço:")
+                      print(f"-> {creds_info['client_email']} <- (Permissão: Editor)")
+                  else:
+                      print(f"Erro ao acessar a pasta: {e}")
+                  sys.exit(1)
 
-          media = MediaFileUpload(file_name, mimetype='application/xml', resumable=True)
+              query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
+              results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+              files = results.get('files', [])
 
-          if files:
-              file_id = files[0]['id']
-              service.files().update(fileId=file_id, media_body=media).execute()
-              print(f"Successfully updated {file_name} in Google Drive!")
-          else:
-              file_metadata = {'name': file_name, 'parents': [folder_id]}
-              service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-              print(f"Successfully uploaded {file_name} to Google Drive!")
+              media = MediaFileUpload(file_name, mimetype='application/xml', resumable=True)
+
+              if files:
+                  file_id = files[0]['id']
+                  service.files().update(fileId=file_id, media_body=media).execute()
+                  print(f"Successfully updated {file_name} in Google Drive!")
+              else:
+                  file_metadata = {'name': file_name, 'parents': [folder_id]}
+                  service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                  print(f"Successfully uploaded {file_name} to Google Drive!")
+                  
+          except Exception as ex:
+              print(f"Erro fatal durante upload: {ex}")
+              sys.exit(1)
           EOF
           python upload.py
