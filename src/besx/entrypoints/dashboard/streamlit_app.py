@@ -142,7 +142,7 @@ def format_sim_name(sim_id):
     Formata o nome da simulação para exibição nos menus suspensos do Dashboard.
     Padrão: [BACKEND] Bateria | X meses | DD/MM/AAAA HH:MM:SS
     """
-    res_path = "Results"
+    res_path = "results"
     import glob
     snap_pattern = os.path.join(res_path, sim_id, "data", "config_snapshot*.json")
     snap_files = glob.glob(snap_pattern)
@@ -627,9 +627,9 @@ with tab_live:
 
 # --- TAB 2: HISTORY ---
 with tab_hist:
-    res_path = "Results"
-    if not os.path.exists(res_path):
-        st.warning("Pasta 'Results' não encontrada.")
+    res_path = "results"
+    if not os.path.exists(res_path) or not os.listdir(res_path):
+        st.info("Nenhum histórico de simulação encontrado.")
     else:
         past_sims = sorted([d for d in os.listdir(res_path) if os.path.isdir(os.path.join(res_path, d))], reverse=True)
         selected_sim = st.selectbox("Selecionar Simulação Passada", past_sims, format_func=format_sim_name)
@@ -683,8 +683,8 @@ with tab_hist:
 # --- TAB 3: COMPARISON ---
 with tab_comp:
     st.header("📈 Comparativo de Simulações")
-    res_path = "Results"
-    if os.path.exists(res_path):
+    res_path = "results"
+    if os.path.exists(res_path) and os.listdir(res_path):
         past_sims = sorted([d for d in os.listdir(res_path) if os.path.isdir(os.path.join(res_path, d))], reverse=True)
         selected_sims = st.multiselect("Selecione Simulações para Comparar", past_sims, format_func=format_sim_name)
         
