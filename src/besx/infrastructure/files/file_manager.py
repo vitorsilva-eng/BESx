@@ -6,6 +6,7 @@ from typing import Optional
 from besx.infrastructure.logging.logger import logger
 
 class FileManager:
+    """Responsável por criar, organizar e resolver caminhos de arquivos e pastas para cada simulação."""
     def __init__(self, base_path: Optional[str] = None, resume_folder: Optional[str] = None) -> None:
         """
         Gerencia a estrutura de pastas e arquivos da simulação.

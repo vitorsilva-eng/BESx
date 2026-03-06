@@ -55,6 +55,7 @@ def exibir_menu_inicial() -> tuple[str, str]:
 # ------------------------------------------------------------------ #
 
 def _imprimir_cabecalho() -> None:
+    """Imprime o cabeçalho do menu interativo no console."""
     print()
     print("=" * 58)
     print("      BESx — Battery Energy Storage Simulator")

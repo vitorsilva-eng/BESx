@@ -7,6 +7,7 @@ from besx.config import CONFIGURACAO, PERFIS_BATERIA
 from besx.infrastructure.logging.logger import logger
 
 def parse_args() -> argparse.Namespace:
+    """Configura e analisa os argumentos de linha de comando."""
     parser = argparse.ArgumentParser(description="BESx Simulation Engine")
     parser.add_argument("--perfil", type=str, help="Perfil da bateria (ex: Sany_314Ah, LiFePO4_78Ah)")
     parser.add_argument("--backend", type=str, choices=["python", "plecs"], help="Backend de simulação")

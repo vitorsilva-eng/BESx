@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from typing import List, Any
 
 class EstatisticasOperacionais(BaseModel):
+    """Modelo Pydantic estruturando as estatísticas operacionais de um mês."""
     Ciclos_Contagem: int
     EFC_Ciclos_Equivalentes: float
     DOD_Medio_Perc: float

@@ -85,6 +85,7 @@ def data_handle(nome_arquivo: Optional[str] = None, meses_alvo: Optional[int] = 
 
 #1 Execução
 def selecionar_arquivo_database() -> Optional[str]:
+    """Exibe os dados na pasta do banco de dados e solicita ao usuário que selecione um."""
     logger.info("Carregando dados de entrada...")
     from besx.config import PATH_DATABASE
     pasta_database = PATH_DATABASE
