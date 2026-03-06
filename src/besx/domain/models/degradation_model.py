@@ -6,6 +6,22 @@ import rainflow
 
 from besx.config import DegradacaoCicloConfig, DegradacaoCalendarioConfig, CONFIGURACAO, ModeloDegradacaoConfig
 from besx.infrastructure.logging.logger import logger
+from pydantic import BaseModel
+from typing import List, Any
+
+class EstatisticasOperacionais(BaseModel):
+    Ciclos_Contagem: int
+    EFC_Ciclos_Equivalentes: float
+    DOD_Medio_Perc: float
+    C_Rate_Max: float
+    C_Rate_Medio: float
+    SOC_Medio: float
+    SOC_Medio_Idle: float
+    Tempo_SOC_Alto_Perc: float
+    Tempo_SOC_Baixo_Perc: float
+    Energia_Carga_kWh: float
+    Energia_Descarga_kWh: float
+    Rainflow_Cycles: List[Any]
 
 def acumular_dano(Ccal_total_mes: float, acum_cal_global: float, exp_tempo: float) -> float:
     """
@@ -231,7 +247,7 @@ def dano_calendar(lista_periodos_idle: list, Tbat_kelvin: float, model_params: D
 
     return float(Ccal_total_mes), df_calculos_calendario
 
-def calcular_estatisticas_operacionais(df_soc_saida: pd.DataFrame, df_potencia_entrada: pd.DataFrame, cap_kwh: float, lista_periodos_idle: list = None) -> dict:
+def calcular_estatisticas_operacionais(df_soc_saida: pd.DataFrame, df_potencia_entrada: pd.DataFrame, cap_kwh: float, lista_periodos_idle: list = None) -> EstatisticasOperacionais:
     """
     Analisa o comportamento do mês: Ciclos (Rainflow), C-Rates e Energia Utilizada.
     """
@@ -272,7 +288,7 @@ def calcular_estatisticas_operacionais(df_soc_saida: pd.DataFrame, df_potencia_e
 
     # DOD Médio
     dods = [x[0] for x in ciclos_rf]
-    avg_dod = np.mean(dods) if dods else 0
+    avg_dod = np.mean(dods) if dods else 0.0
 
     # --- 5. Análise de Throughput (EFC via Rainflow) ---
     # Cada ciclo completo (1.0 DOD) = 1 EFC.
@@ -293,25 +309,25 @@ def calcular_estatisticas_operacionais(df_soc_saida: pd.DataFrame, df_potencia_e
         if t_total_idle > 0:
             soc_idle_avg = sum(p['SOC'] * p['t'] for p in lista_periodos_idle) / t_total_idle
         else:
-            soc_idle_avg = np.nan
+            soc_idle_avg = float('nan')
     else:
         idle_mask = p_ca_kw == 0.0        
         if idle_mask.any():
-            soc_idle_avg = soc_series[idle_mask].mean()
+            soc_idle_avg = float(soc_series[idle_mask].mean())
         else:
-            soc_idle_avg = np.nan
+            soc_idle_avg = float('nan')
 
-    return {
-        "Ciclos_Contagem": num_ciclos,
-        "EFC_Ciclos_Equivalentes": round(float(efc), 2),
-        "DOD_Medio_Perc": round(float(avg_dod), 4),
-        "C_Rate_Max": round(float(max_c_rate), 2), 
-        "C_Rate_Medio": round(float(avg_c_rate), 3),
-        "SOC_Medio": round(float(media_soc), 4),
-        "SOC_Medio_Idle": round(float(soc_idle_avg), 4),
-        "Tempo_SOC_Alto_Perc": round(float(pct_alto), 1),
-        "Tempo_SOC_Baixo_Perc": round(float(pct_baixo), 1),
-        "Energia_Carga_kWh": round(float(energia_carga_kwh), 2),
-        "Energia_Descarga_kWh": round(float(energia_descarga_kwh), 2),
-        "Rainflow_Cycles": ciclos_rf 
-    }
+    return EstatisticasOperacionais(
+        Ciclos_Contagem=num_ciclos,
+        EFC_Ciclos_Equivalentes=round(float(efc), 2),
+        DOD_Medio_Perc=round(float(avg_dod), 4),
+        C_Rate_Max=round(float(max_c_rate), 2), 
+        C_Rate_Medio=round(float(avg_c_rate), 3),
+        SOC_Medio=round(float(media_soc), 4),
+        SOC_Medio_Idle=round(float(soc_idle_avg) if not np.isnan(soc_idle_avg) else 0.0, 4),
+        Tempo_SOC_Alto_Perc=round(float(pct_alto), 1),
+        Tempo_SOC_Baixo_Perc=round(float(pct_baixo), 1),
+        Energia_Carga_kWh=round(float(energia_carga_kwh), 2),
+        Energia_Descarga_kWh=round(float(energia_descarga_kwh), 2),
+        Rainflow_Cycles=ciclos_rf 
+    )

@@ -5,17 +5,27 @@ import shutil
 from besx.infrastructure.logging.logger import logger
 
 class FileManager:
-    def __init__(self, base_path=None):
+    def __init__(self, base_path=None, resume_folder=None):
         """
         Gerencia a estrutura de pastas e arquivos da simulação.
         
-        Cria uma nova pasta para cada execução baseada no timestamp.
+        Cria uma nova pasta para cada execução baseada no timestamp,
+        ou reutiliza uma pasta existente se resume_folder for fornecido.
         Ex: results/sim_20231027_103000/
         """
         from besx.config import PATH_RESULTS
         self.base_path = base_path or PATH_RESULTS
-        self.timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.sim_folder = os.path.join(self.base_path, f"sim_{self.timestamp}")
+        
+        if resume_folder:
+            self.sim_folder = os.path.join(self.base_path, resume_folder)
+            # Extrai o timestamp da pasta (assume formato padrão sim_YYYYMMDD_HHMMSS)
+            if resume_folder.startswith("sim_"):
+                self.timestamp = resume_folder[4:]
+            else:
+                self.timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        else:
+            self.timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.sim_folder = os.path.join(self.base_path, f"sim_{self.timestamp}")
         
         # Subpastas
         self.plots_folder = os.path.join(self.sim_folder, "plots")

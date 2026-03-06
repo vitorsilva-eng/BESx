@@ -5,7 +5,8 @@ import time
 import numpy as np
 import pandas as pd
 import datetime
-from IPython.display import display
+from pydantic import BaseModel
+from typing import List, Any, Dict
 
 # Imports internos
 from besx.infrastructure.files.file_manager import FileManager
@@ -18,16 +19,42 @@ from besx.infrastructure.reports.report import gerar_relatorio_txt
 from besx.infrastructure.logging.logger import logger
 from besx.infrastructure.reports.validation_report import gerar_relatorio_validacao, exportar_debug_degradacao, export_xlsx
 
+class ResultadoMes(BaseModel):
+    mes: int
+    total_meses: int
+    dano_ciclos_mes: float
+    dano_cal_mes: float
+    dano_ciclo_acum: float
+    dano_cal_acum: float
+    dano_total_acum: float
+    capacidade_restante: float
+    acum_energia_carga_kWh: float
+    acum_energia_descarga_kWh: float
+    df_soc_amostrado: List[Dict[str, Any]]
+    Ciclos_Contagem: int
+    EFC_Ciclos_Equivalentes: float
+    DOD_Medio_Perc: float
+    C_Rate_Max: float
+    C_Rate_Medio: float
+    SOC_Medio: float
+    SOC_Medio_Idle: float
+    Tempo_SOC_Alto_Perc: float
+    Tempo_SOC_Baixo_Perc: float
+    Energia_Carga_kWh: float
+    Energia_Descarga_kWh: float
+    Rainflow_Cycles: List[Any]
+
 class SimulationManager:
     def __init__(self, config, backend: str = "python", data_file: str = None,
-                 on_mes_complete: callable = None, sim_until_eol: bool = False):
+                 on_mes_complete: callable = None, sim_until_eol: bool = False,
+                 resume_folder: str = None):
         self.config = config
         self.backend = backend  # "python" | "plecs"
         self.data_file = data_file # Opcional: nome do arquivo em /database
         self.on_mes_complete = on_mes_complete
         self.sim_until_eol = sim_until_eol  # Se True, ignora meses_alvo e roda até EOL
         # Inicializa gerenciador de arquivos (cria pastas)
-        self.file_manager = FileManager()
+        self.file_manager = FileManager(resume_folder=resume_folder)
         
         # Estado Inicial
         self.soh_atual = self.config.simulacao.SOH_INICIAL_PERC / 100.0
@@ -42,9 +69,53 @@ class SimulationManager:
         self.acum_energia_descarga = 0.0
         self.start_time = None
         
+        # Controle de Checkpoint
+        self.mes_inicial = 1
+        
         # Atalhos de config
         self.exp_cal = self.config.modelo_degradacao.calendario.exp_cal
         self.cfg_bat = self.config.bateria
+        
+        # Carrega checkpoint se existir
+        self._carregar_checkpoint()
+
+    def _carregar_checkpoint(self):
+        caminho_checkpoint = self.file_manager.get_data_path("checkpoint.json")
+        if os.path.exists(caminho_checkpoint):
+            try:
+                with open(caminho_checkpoint, 'r', encoding='utf-8') as f:
+                    estado = json.load(f)
+                self.soh_atual = estado.get("soh_atual", self.soh_atual)
+                self.soc_zero = estado.get("soc_zero", self.soc_zero)
+                self.acum_ciclo_global = estado.get("acum_ciclo_global", self.acum_ciclo_global)
+                self.acum_cal_global = estado.get("acum_cal_global", self.acum_cal_global)
+                self.acum_energia_carga = estado.get("acum_energia_carga", self.acum_energia_carga)
+                self.acum_energia_descarga = estado.get("acum_energia_descarga", self.acum_energia_descarga)
+                self.resultados_mensais = estado.get("resultados_mensais", [])
+                
+                meses_salvos = len(self.resultados_mensais)
+                if meses_salvos > 0:
+                    self.mes_inicial = self.resultados_mensais[-1].get("mes", meses_salvos) + 1
+                logger.info(f"Checkpoint carregado com sucesso. Retomando a partir do mês {self.mes_inicial} (SOH: {self.soh_atual*100:.2f}%)")
+            except Exception as e:
+                logger.error(f"Erro ao carregar o checkpoint.json: {e}")
+
+    def _salvar_checkpoint(self):
+        caminho_checkpoint = self.file_manager.get_data_path("checkpoint.json")
+        estado = {
+            "soh_atual": self.soh_atual,
+            "soc_zero": self.soc_zero,
+            "acum_ciclo_global": self.acum_ciclo_global,
+            "acum_cal_global": self.acum_cal_global,
+            "acum_energia_carga": self.acum_energia_carga,
+            "acum_energia_descarga": self.acum_energia_descarga,
+            "resultados_mensais": self.resultados_mensais,
+        }
+        try:
+            with open(caminho_checkpoint, 'w', encoding='utf-8') as f:
+                json.dump(estado, f, indent=2, default=str)
+        except Exception as e:
+            logger.warning(f"Erro ao salvar checkpoint.json: {e}")
 
     def run(self):
         self.start_time = datetime.datetime.now()
@@ -74,11 +145,15 @@ class SimulationManager:
         
         # --- ETAPA 2: ITERAÇÃO MENSAL ---
         total_meses = len(df_perfil_bess)
-        ctt = 0
+        
         try:
-            for df_mes in df_perfil_bess:
-                ctt += 1
-                self._processar_mes(df_mes, ctt, total_meses)
+            for mes_idx, df_mes in enumerate(df_perfil_bess):
+                mes_id = mes_idx + 1
+                if mes_id < self.mes_inicial:
+                    continue  # Pula os meses já processados no checkpoint
+                    
+                self._processar_mes(df_mes, mes_id, total_meses)
+                self._salvar_checkpoint()
                 
                 # Checagem de fim de vida (sempre ativa)
                 if self.soh_atual * 100 <= 100 - self.cfg_bat.capacidade_limite_perda_perc:
@@ -157,27 +232,38 @@ class SimulationManager:
         cap_kwh = self.cfg_bat.capacidade_nominal_wh / 1000.0
         stats_ops = calcular_estatisticas_operacionais(perfil_soc_mes, df_mes, cap_kwh=cap_kwh, lista_periodos_idle=idle_cycles_mes)
         
-        logger.info(f"   -> Resumo Mês {mes_id}/{total_meses}: {stats_ops.get('Ciclos_Contagem')} ciclos | "
+        logger.info(f"   -> Resumo Mês {mes_id}/{total_meses}: {stats_ops.Ciclos_Contagem} ciclos | "
               f"SOH: {self.soh_atual*100:.2f}%")
 
         # 6. Agrega Resultados
-        self.acum_energia_carga += stats_ops.get("Energia_Carga_kWh", 0)
-        self.acum_energia_descarga += stats_ops.get("Energia_Descarga_kWh", 0)
+        self.acum_energia_carga += stats_ops.Energia_Carga_kWh
+        self.acum_energia_descarga += stats_ops.Energia_Descarga_kWh
 
-        dados_mes = {
-            'mes': mes_id,
-            'total_meses': total_meses,
-            'dano_ciclos_mes': Ccyc,
-            'dano_cal_mes': Ccal,
-            'dano_ciclo_acum': self.acum_ciclo_global,
-            'dano_cal_acum': self.acum_cal_global,
-            'dano_total_acum': self.acum_ciclo_global + self.acum_cal_global,
-            'capacidade_restante': self.soh_atual * 100,
-            'acum_energia_carga_kWh': self.acum_energia_carga,
-            'acum_energia_descarga_kWh': self.acum_energia_descarga,
-            **stats_ops
-        }
-        self.resultados_mensais.append(dados_mes)
+        # Realiza Downsampling do perfil Operacional para o Frontend e Histórico 
+        # (Preserva máximo de 1000 pontos p/ mes para não travar RAM do Streamlit)
+        passo_amostral = max(1, len(perfil_soc_mes) // 1000)
+        df_plot_reduzido = perfil_soc_mes.iloc[::passo_amostral].copy()
+        try:
+            dict_soc_amostrado = df_plot_reduzido.to_dict(orient='records')
+        except Exception as e:
+            logger.warning(f"Falha ao gerar amostragem do Mês {mes_id}. Erro: {e}")
+            dict_soc_amostrado = []
+            
+        resultado_mes = ResultadoMes(
+            mes=mes_id,
+            total_meses=total_meses,
+            dano_ciclos_mes=Ccyc,
+            dano_cal_mes=Ccal,
+            dano_ciclo_acum=self.acum_ciclo_global,
+            dano_cal_acum=self.acum_cal_global,
+            dano_total_acum=self.acum_ciclo_global + self.acum_cal_global,
+            capacidade_restante=self.soh_atual * 100,
+            acum_energia_carga_kWh=self.acum_energia_carga,
+            acum_energia_descarga_kWh=self.acum_energia_descarga,
+            df_soc_amostrado=dict_soc_amostrado,
+            **stats_ops.model_dump()
+        )
+        self.resultados_mensais.append(resultado_mes.model_dump())
         
         # Armazena cálculos detalhados para o relatório de validação
         self.calculos_detalhados.append({
@@ -193,8 +279,7 @@ class SimulationManager:
     def _finalizar_simulacao(self):
         df_resultados_finais = pd.DataFrame(self.resultados_mensais)
         
-        logger.info("\n--- Resultado Final Consolidado ---")
-        display(df_resultados_finais)
+        logger.info(f"\n--- Resultado Final Consolidado ---\n{df_resultados_finais.tail()}")
         
         # Obter nome amigável da bateria
         bateria_nome = next(

@@ -85,7 +85,7 @@ class RelatorioConfig(BaseModel):
     incluir_calculos_intermediarios: bool = True
 
 class LLMConfig(BaseModel):
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "AIzaSyD7xPCoC1qtZMrKvPasJTPzGH8a6OMpQGQ")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
 
 class Settings(BaseModel):
     plecs: PlecsConfig = Field(default_factory=PlecsConfig)

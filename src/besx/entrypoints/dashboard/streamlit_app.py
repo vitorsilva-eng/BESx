@@ -327,15 +327,15 @@ def render_view_overview(df_results, df_soc_mes, month_idx=None, key_suffix=""):
             )
             st.plotly_chart(fig, use_container_width=True, key=f"damage_month_{key_suffix}")
         else:
-            st.subheader("Dano Acumulado ao Longo do Tempo")
+            st.subheader("Razão de Dano Acumulado (100% Stacked Area)")
             if not df_results.empty:
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=df_results['mes'], y=df_results['dano_ciclo_acum'], name='Dano Ciclo', fill='tozeroy', line=dict(color=THEME_COLORS["CYCLE"])))
-                fig.add_trace(go.Scatter(x=df_results['mes'], y=df_results['dano_cal_acum'], name='Dano Cal', fill='tonexty', line=dict(color=THEME_COLORS["CALENDAR"])))
+                fig.add_trace(go.Scatter(x=df_results['mes'], y=df_results['dano_ciclo_acum'], name='Dano Ciclo', stackgroup='one', groupnorm='percent', fill='tozeroy', line=dict(color=THEME_COLORS["CYCLE"])))
+                fig.add_trace(go.Scatter(x=df_results['mes'], y=df_results['dano_cal_acum'], name='Dano Cal', stackgroup='one', groupnorm='percent', fill='tonexty', line=dict(color=THEME_COLORS["CALENDAR"])))
                 fig.update_layout(
                     height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                     font=dict(color=THEME_COLORS["TEXT"]),
-                    xaxis=dict(gridcolor=THEME_COLORS["GRID"]), yaxis=dict(gridcolor=THEME_COLORS["GRID"]),
+                    xaxis=dict(gridcolor=THEME_COLORS["GRID"]), yaxis=dict(gridcolor=THEME_COLORS["GRID"], title="Proporção do Dano (%)", range=[0, 100]),
                     xaxis_title="Meses"
                 )
                 st.plotly_chart(fig, use_container_width=True, key=f"damage_accum_{key_suffix}")
@@ -411,52 +411,120 @@ def render_view_degradation(df_results, month_idx=None, key_suffix=""):
             # Convert DOD to % if it's in fraction
             if df_rf['DOD'].max() <= 1.1:
                 df_rf['DOD'] *= 100.0
-            fig_rf = px.histogram(df_rf, x='DOD', y='Count', nbins=20, 
-                                  labels={'DOD':'Profundidade (DOD %)', 'Count':'Ocorrências'},
-                           color_discrete_sequence=[THEME_COLORS["CYCLE"]])
-            fig_rf.update_layout(
-                height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color=THEME_COLORS["TEXT"]),
-                xaxis=dict(gridcolor=THEME_COLORS["GRID"]), yaxis=dict(gridcolor=THEME_COLORS["GRID"]),
-                template="plotly_dark" if st.get_option("theme.base") != "light" else "plotly_white"
-            )
-            st.plotly_chart(fig_rf, use_container_width=True, key=f"dod_rf_hist_{key_suffix}")
+            
+            c_rf1, c_rf2 = st.columns(2)
+            
+            with c_rf1:
+                fig_rf = px.histogram(df_rf, x='DOD', y='Count', nbins=20, 
+                                      labels={'DOD':'Profundidade (DOD %)', 'Count':'Ocorrências'},
+                               color_discrete_sequence=[THEME_COLORS["CYCLE"]])
+                fig_rf.update_layout(
+                    title="Histograma de DOD",
+                    height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color=THEME_COLORS["TEXT"]),
+                    xaxis=dict(gridcolor=THEME_COLORS["GRID"]), yaxis=dict(gridcolor=THEME_COLORS["GRID"]),
+                    template="plotly_dark" if st.get_option("theme.base") != "light" else "plotly_white"
+                )
+                st.plotly_chart(fig_rf, use_container_width=True, key=f"dod_rf_hist_{key_suffix}")
+
+            with c_rf2:
+                df_rf_plot = df_rf.copy()
+                if df_rf_plot['Mean'].max() <= 1.1:
+                    df_rf_plot['Mean'] *= 100.0
+                fig_matriz = px.scatter(df_rf_plot, x='Mean', y='DOD', size='Count', color='Count',
+                                        labels={'Mean':'SOC Médio (%)', 'DOD':'DOD (%)', 'Count':'Ciclos'},
+                                        color_continuous_scale='Inferno', size_max=40)
+                fig_matriz.update_layout(
+                    title="Matriz de Fadiga de Ciclos",
+                    height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color=THEME_COLORS["TEXT"]),
+                    xaxis=dict(gridcolor=THEME_COLORS["GRID"]), yaxis=dict(gridcolor=THEME_COLORS["GRID"]),
+                    template="plotly_dark" if st.get_option("theme.base") != "light" else "plotly_white"
+                )
+                st.plotly_chart(fig_matriz, use_container_width=True, key=f"dod_rf_matriz_{key_suffix}")
 
 def render_view_operational(df_results, df_soc_mes, df_input_mes, month_idx=None, key_suffix=""):
     if month_idx is None:
         st.info("Selecione um mês específico para ver a análise operacional detalhada (Mapas de Calor, C-Rate).")
         return
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader(f"SOC vs Potência - Mês {month_idx + 1}")
-        if not df_soc_mes.empty and not df_input_mes.empty:
-            min_l = min(len(df_input_mes), len(df_soc_mes))
-            soc_vals = df_soc_mes['SOC'].values[:min_l]
-            if soc_vals.max() <= 1.1:
-                soc_vals *= 100.0
-            fig = px.density_heatmap(x=soc_vals, y=df_input_mes.iloc[:min_l, 1].values, 
-                                    labels={'x':'SOC (%)', 'y':'Potência (kW)'}, nbinsx=30, nbinsy=30,
-                                    color_continuous_scale="Viridis")
-            fig.update_layout(
-                height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color=THEME_COLORS["TEXT"]),
-                xaxis=dict(gridcolor=THEME_COLORS["GRID"]), yaxis=dict(gridcolor=THEME_COLORS["GRID"])
-            )
-            st.plotly_chart(fig, use_container_width=True, key=f"heatmap_{key_suffix}")
-    with c2:
-        st.subheader(f"C-Rate - Mês {month_idx + 1}")
-        if not df_input_mes.empty:
-            cap_kwh = CONFIGURACAO.bateria.capacidade_nominal_wh / 1000
-            crate = np.abs(df_input_mes.iloc[:, 1].values) / cap_kwh
-            fig = px.histogram(x=crate, nbins=30, labels={'x': 'C-Rate'}, color_discrete_sequence=[THEME_COLORS["PRIMARY"]])
-            fig.update_layout(
-                height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color=THEME_COLORS["TEXT"]),
-                xaxis=dict(gridcolor=THEME_COLORS["GRID"]), yaxis=dict(gridcolor=THEME_COLORS["GRID"]),
-                yaxis_title="Frequência"
-            )
-            st.plotly_chart(fig, use_container_width=True, key=f"crate_hist_{key_suffix}")
+    df_plot = pd.DataFrame()
+
+    # Tentativa 1: Usar DataFrame de Alta Resolução se estiver na tela
+    if not df_soc_mes.empty:
+        passo_amostral = max(1, len(df_soc_mes) // 1500)
+        df_plot = df_soc_mes.iloc[::passo_amostral].copy()
+    
+    # Tentativa 2: Tentar resgatar a amostra salva em memória no dict mensal
+    elif not df_results.empty:
+        try:
+            target_data = df_results.iloc[month_idx]
+            amostrado_list = target_data.get('df_soc_amostrado', [])
+            
+            # Checa se veio string (pode acontecer ao ler do XLSX do histórico)
+            if isinstance(amostrado_list, str):
+                import ast
+                try: amostrado_list = ast.literal_eval(amostrado_list)
+                except: amostrado_list = []
+                
+            if isinstance(amostrado_list, list) and len(amostrado_list) > 0:
+                df_plot = pd.DataFrame(amostrado_list)
+        except Exception as e:
+            pass
+
+    if df_plot.empty:
+        st.warning("⚠️ Séries temporais (SOC, Potência, Tensão) ausentes/descartadas para este mês.\n\n"
+                   "Para evitar estouro de memória (RAM) com dados de alta resolução, "
+                   "o BESx preserva na interface apenas as curvas amostradas.\n"
+                   "*(As simulações antigas do histórico podem não ter o log amostrado ativado).*")
+        return
+
+    st.subheader(f"Evolução Temporal das Grandezas Elétricas - Mês {month_idx + 1}")
+    
+    # Converter tempo de segundos para horas / dias 
+    tempo_em_horas = df_plot['Tempo'] / 3600.0
+    x_axis = tempo_em_horas
+
+    from plotly.subplots import make_subplots
+    fig = make_subplots(rows=4, cols=1, shared_xaxes=True, 
+                        vertical_spacing=0.05,
+                        subplot_titles=("Tensão (V)", "Corrente (A)", "Potência CA (kW)", "SOC (%)"))
+
+    # 1. Tensão
+    if 'Tensao_Term_V' in df_plot.columns:
+        fig.add_trace(go.Scatter(x=x_axis, y=df_plot['Tensao_Term_V'], name="Tensão", line_color=THEME_COLORS["SECONDARY"]), row=1, col=1)
+        v_max = CONFIGURACAO.bateria.v_max_celula * CONFIGURACAO.bateria.Ns
+        v_min = CONFIGURACAO.bateria.v_min_celula * CONFIGURACAO.bateria.Ns
+        fig.add_hline(y=v_max, line_dash='dash', line_color=THEME_COLORS["DANGER"], row=1, col=1)
+        fig.add_hline(y=v_min, line_dash='dash', line_color=THEME_COLORS["DANGER"], row=1, col=1)
+
+    # 2. Corrente
+    if 'Corrente_A' in df_plot.columns:
+        fig.add_trace(go.Scatter(x=x_axis, y=df_plot['Corrente_A'], name="Corrente", line_color=THEME_COLORS["CYCLE"]), row=2, col=1)
+
+    # 3. Potência CA
+    if 'Potencia_CA_kW' in df_plot.columns:
+        fig.add_trace(go.Scatter(x=x_axis, y=df_plot['Potencia_CA_kW'], name="Potência CA", fill='tozeroy', line_color=THEME_COLORS["CALENDAR"]), row=3, col=1)
+
+    # 4. SOC
+    soc_plot = df_plot['SOC'] * 100.0 if df_plot['SOC'].max() <= 1.1 else df_plot['SOC']
+    fig.add_trace(go.Scatter(x=x_axis, y=soc_plot, name="SOC", line_color=THEME_COLORS["PRIMARY"]), row=4, col=1)
+
+    fig.update_layout(
+        height=700,
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=THEME_COLORS["TEXT"]),
+        showlegend=False,
+        margin=dict(l=20, r=20, t=40, b=20)
+    )
+    
+    # Grid configuration
+    for i in range(1, 5):
+        fig.update_xaxes(gridcolor=THEME_COLORS["GRID"], row=i, col=1)
+        fig.update_yaxes(gridcolor=THEME_COLORS["GRID"], row=i, col=1)
+    fig.update_xaxes(title_text="Tempo (Horas)", row=4, col=1)
+
+    st.plotly_chart(fig, use_container_width=True, key=f"timeseries_op_{key_suffix}")
 
 # --- Sidebar ---
 st.sidebar.title("🔋 BESx Dashboard")
