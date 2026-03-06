@@ -43,6 +43,8 @@ results/
 *.zip
 besx_context_for_notebooklm.txt
 
-# Simulator Data (Temporary/Generated)
-potencia_mes_in.mat
-soc_out_mes.csv
+# Large Files & References (Untracked)
+_OLD/
+_ref/
+debug/
+repomix-output.*

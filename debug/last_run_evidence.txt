@@ -1,1 +1,0 @@
-Bateria: LiFePO4_78Ah | Rs: 0.0 | Rend: 1.0 | SOC_MAX: 1.0
