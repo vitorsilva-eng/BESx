@@ -16,7 +16,7 @@ jobs:
         
       # Solução 1: Roda o Repomix diretamente via npx (sem usar a action de terceiros)
       - name: Pack codebase with Repomix
-        run: npx repomix --style markdown --output repomix-output.md
+        run: npx repomix --style markdown --output repomix-output.txt
           
       # Solução 2: Upload NATIVO com Python (Sem usar actions de terceiros, 100% à prova de falhas)
       - name: Set up Python
@@ -57,7 +57,8 @@ jobs:
           )
           
           service = build('drive', 'v3', credentials=creds)
-          file_name = 'repomix-output.md'
+          local_file = 'repomix-output.txt'
+          drive_file_name = 'BESx_Codebase_AutoSync'
 
           try:
               # Verifica se a pasta existe e está acessível
@@ -68,20 +69,27 @@ jobs:
                   print(f"Erro completo: {e}")
                   sys.exit(1)
 
-              query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
+              query = f"name='{drive_file_name}' and '{folder_id}' in parents and trashed=false"
               results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
               files = results.get('files', [])
 
-              media = MediaFileUpload(file_name, mimetype='text/markdown', resumable=True)
+              # text/plain para que o Google Drive faça a conversão corretamente lendo o txt
+              media = MediaFileUpload(local_file, mimetype='text/plain', resumable=True)
 
               if files:
                   file_id = files[0]['id']
+                  # Na atualização, preservamos o arquivo existente como um Google Doc
                   service.files().update(fileId=file_id, media_body=media).execute()
-                  print(f"Successfully updated {file_name} in Google Drive!")
+                  print(f"Successfully updated {drive_file_name} as a Google Document!")
               else:
-                  file_metadata = {'name': file_name, 'parents': [folder_id]}
+                  # Na criação, forçamos a conversão para Google Document na nuvem
+                  file_metadata = {
+                      'name': drive_file_name, 
+                      'parents': [folder_id],
+                      'mimeType': 'application/vnd.google-apps.document'
+                  }
                   service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-                  print(f"Successfully uploaded {file_name} to Google Drive!")
+                  print(f"Successfully uploaded {drive_file_name} as a Google Document!")
                   
           except Exception as ex:
               print(f"Erro fatal durante upload: {ex}")
