@@ -73,22 +73,29 @@ jobs:
               results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
               files = results.get('files', [])
 
-              # text/plain para que o Google Drive faça a conversão corretamente lendo o txt
+              # text/plain para upload real do arquivo txt gerado 
               media = MediaFileUpload(local_file, mimetype='text/plain', resumable=True)
 
               if files:
                   file_id = files[0]['id']
-                  # Na atualização, preservamos o arquivo existente como um Google Doc
-                  service.files().update(fileId=file_id, media_body=media).execute()
+                  # Atualização com conversão automática
+                  service.files().update(
+                      fileId=file_id, 
+                      media_body=media
+                  ).execute()
                   print(f"Successfully updated {drive_file_name} as a Google Document!")
               else:
-                  # Na criação, forçamos a conversão para Google Document na nuvem
+                  # Na criação, forçamos a conversão indicando o mimeType do Google Docs no metadata
                   file_metadata = {
                       'name': drive_file_name, 
                       'parents': [folder_id],
                       'mimeType': 'application/vnd.google-apps.document'
                   }
-                  service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                  service.files().create(
+                      body=file_metadata, 
+                      media_body=media, 
+                      fields='id'
+                  ).execute()
                   print(f"Successfully uploaded {drive_file_name} as a Google Document!")
                   
           except Exception as ex:
