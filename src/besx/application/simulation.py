@@ -20,6 +20,7 @@ from besx.infrastructure.logging.logger import logger
 from besx.infrastructure.reports.validation_report import gerar_relatorio_validacao, exportar_debug_degradacao, export_xlsx
 
 class ResultadoMes(BaseModel):
+    """Modelo Pydantic para estruturar e validar os resultados de um mês de simulação."""
     mes: int
     total_meses: int
     dano_ciclos_mes: float
@@ -45,6 +46,10 @@ class ResultadoMes(BaseModel):
     Rainflow_Cycles: List[Any]
 
 class SimulationManager:
+    """
+    Gerenciador principal que orquestra a execução da simulação de bateria.
+    Controla o estado, processa mês a mês e salva resultados intermediários (checkpoints).
+    """
     def __init__(self, config: Any, backend: str = "python", data_file: str = None,
                  on_mes_complete: callable = None, sim_until_eol: bool = False,
                  resume_folder: str = None) -> None:
@@ -80,6 +85,9 @@ class SimulationManager:
         self._carregar_checkpoint()
 
     def _carregar_checkpoint(self) -> None:
+        """
+        Tenta carregar o estado anterior da simulação a partir de um arquivo checkpoint.json.
+        """
         caminho_checkpoint = self.file_manager.get_data_path("checkpoint.json")
         if os.path.exists(caminho_checkpoint):
             try:
@@ -101,6 +109,9 @@ class SimulationManager:
                 logger.error(f"Erro ao carregar o checkpoint.json: {e}")
 
     def _salvar_checkpoint(self) -> None:
+        """
+        Salva o estado atual da simulação em um arquivo checkpoint.json para permitir retomada.
+        """
         caminho_checkpoint = self.file_manager.get_data_path("checkpoint.json")
         estado = {
             "soh_atual": self.soh_atual,
@@ -118,6 +129,9 @@ class SimulationManager:
             logger.warning(f"Erro ao salvar checkpoint.json: {e}")
 
     def run(self) -> None:
+        """
+        Inicia ou retoma a execução completa do pipeline de simulação.
+        """
         self.start_time = datetime.datetime.now()
         logger.info("Iniciando a Execução via SimulationManager")
         logger.info(f"Resultados serão salvos em: {self.file_manager.sim_folder}")
@@ -167,6 +181,9 @@ class SimulationManager:
         self._finalizar_simulacao()
 
     def _processar_mes(self, df_mes: pd.DataFrame, mes_id: int, total_meses: int) -> None:
+        """
+        Processa um mês individual de simulação: cálculos elétricos, degradação e agregação.
+        """
         # 1. Simulação da bateria (backend escolhido no menu)
         perfil_soc_mes = run_monthly_simulation(
             df_mes, self.soh_atual, self.soc_zero, mes_id,
@@ -277,6 +294,9 @@ class SimulationManager:
             self.on_mes_complete(perfil_soc_mes, dados_mes, df_mes)
 
     def _finalizar_simulacao(self) -> None:
+        """
+        Consolida os resultados, exporta relatórios e gera os gráficos finais da simulação.
+        """
         df_resultados_finais = pd.DataFrame(self.resultados_mensais)
         
         logger.info(f"\n--- Resultado Final Consolidado ---\n{df_resultados_finais.tail()}")
