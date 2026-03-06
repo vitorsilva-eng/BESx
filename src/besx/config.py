@@ -12,6 +12,7 @@ PERFIL_ATIVO = "LiFePO4_78Ah"
 # --- Classes de Configuração (Pydantic) ---
 
 class PlecsConfig(BaseModel):
+    """Configurações relacionadas ao backend PLECS XML-RPC."""
     MODELO_PLECS: str = "bess_batch_mode"
     BLOCO_SOH_ALIAS: str = "SOH_Input"
     ARQUIVO_ENTRADA_POT: str = "potencia_mes_in.mat"
@@ -19,6 +20,7 @@ class PlecsConfig(BaseModel):
     Nfases: int = 3
 
 class DadosEntradaConfig(BaseModel):
+    """Configurações gerais dos dados de telemetria de entrada e formatação de tempo."""
     ARQUIVO_MAT: str = "cmveditora.mat"
     dt_minutos: Union[str, float, int] = ""  # Pode ser string vazia inicial ou número
     dias_por_mes_sim: int = 30
@@ -26,12 +28,14 @@ class DadosEntradaConfig(BaseModel):
     dias_por_ano_avg: int = 360
 
 class SimulacaoConfig(BaseModel):
+    """Configurações de escopo e limites da simulação (SOH inicial e prazos)."""
     SOH_INICIAL_PERC: float = 100.0
     ANOS_SIMULACAO: int = 1
     MESES_SIMULACAO: Optional[int] = None
     data_inicio_simulacao: str = '2025-01-01 00:00:00'
 
 class BateriaConfig(BaseModel):
+    """Parâmetros físicos, nominais e termodinâmicos para o modelo da bateria."""
     model_config = {"populate_by_name": True}
     capacidade_nominal_wh: float
     capacidade_limite_perda_perc: float = 20.0
@@ -48,9 +52,12 @@ class BateriaConfig(BaseModel):
     P_bess: Optional[float] = None
     soc_prof: Optional[List[float]] = None
     ocv_prof: Optional[List[float]] = None
+    ocv_charge_prof: Optional[List[float]] = None
+    ocv_discharge_prof: Optional[List[float]] = None
     rendimento_pcs: float = 0.88
 
 class DegradacaoCicloConfig(BaseModel):
+    """Constantes empíricas do modelo de degradação cíclico."""
     a: float = 2.6418
     b: float = -0.01943
     c: float = 0.004
@@ -63,6 +70,7 @@ class DegradacaoCicloConfig(BaseModel):
     mean_round_dp: int = 1
 
 class DegradacaoCalendarioConfig(BaseModel):
+    """Constantes empíricas do modelo de degradação por calendário."""
     k_T: float = 1.9775e-11
     exp_T: float = 0.07511
     k_soc: float = 1.639
@@ -70,10 +78,12 @@ class DegradacaoCalendarioConfig(BaseModel):
     exp_cal: float = 1.25  # 10/8
 
 class ModeloDegradacaoConfig(BaseModel):
+    """Agrega todas as configurações relevantes à modelagem da degradação física."""
     ciclo: DegradacaoCicloConfig = Field(default_factory=DegradacaoCicloConfig)
     calendario: DegradacaoCalendarioConfig = Field(default_factory=DegradacaoCalendarioConfig)
 
 class PathsConfig(BaseModel):
+    """Mapeamento de caminhos padrões e saída do logger/assets."""
     data: str = "data"
     sim: str = "sim"
     debug: str = "debug"
@@ -81,13 +91,16 @@ class PathsConfig(BaseModel):
     relatorio: str = "relatorio"
 
 class RelatorioConfig(BaseModel):
+    """Configurações referentes ao nível de detalhamento dos relatórios gerados."""
     gerar_validacao_detalhada: bool = True
     incluir_calculos_intermediarios: bool = True
 
 class LLMConfig(BaseModel):
+    """Configurações de integração com modelos de linguagem (Gemini)."""
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
 
 class Settings(BaseModel):
+    """Root model para agregar globalmente todos os submodelos de configuração."""
     plecs: PlecsConfig = Field(default_factory=PlecsConfig)
     dados_entrada: DadosEntradaConfig = Field(default_factory=DadosEntradaConfig)
     simulacao: SimulacaoConfig = Field(default_factory=SimulacaoConfig)

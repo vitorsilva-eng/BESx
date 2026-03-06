@@ -76,13 +76,21 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
         # Delta T em horas
         dt_h = (tempos_min_arr[k + 1] - tempos_min_arr[k]) / 60.0
         
-        # Interpolação da Tensão OCV atual
-        v_ocv_celula = _interpolar_ocv(soc_out[k], cfg_bat.soc_prof, cfg_bat.ocv_prof)
-        v_ocv_banco = v_ocv_celula * cfg_bat.Ns
-        
         # Potência CA limitida pelo PCS
         p_bess_limite = float(cfg_bat.P_bess) if cfg_bat.P_bess else float('inf')
         p_ca_w = np.clip(pot_w_arr[k], -p_bess_limite, p_bess_limite)
+        
+        # Seleção da Curva OCV considerando Histerese (Carga vs Descarga)
+        if p_ca_w > 0 and getattr(cfg_bat, 'ocv_charge_prof', None) is not None:
+            curva_ocv_ativa = cfg_bat.ocv_charge_prof
+        elif p_ca_w < 0 and getattr(cfg_bat, 'ocv_discharge_prof', None) is not None:
+            curva_ocv_ativa = cfg_bat.ocv_discharge_prof
+        else:
+            curva_ocv_ativa = cfg_bat.ocv_prof
+            
+        # Interpolação da Tensão OCV atual
+        v_ocv_celula = _interpolar_ocv(soc_out[k], cfg_bat.soc_prof, curva_ocv_ativa)
+        v_ocv_banco = v_ocv_celula * cfg_bat.Ns
         
         # Potência DC na Bateria (P > 0: Carga | P < 0: Descarga)
         if p_ca_w > 0:
@@ -255,16 +263,24 @@ def old_simular_soc_mes(
         # Intervalo de tempo em horas
         dt_h = (tempos_min[k + 1] - tempos_min[k]) / 60.0
 
+        # 1. Potência solicitada pelo lado CA (W) — limitada à potência máxima do BESS
+        p_ca_w = np.clip(pot_w[k], -p_bess, p_bess)
+        
+        # Seleção da Curva OCV considerando Histerese (Carga vs Descarga)
+        if p_ca_w > 0 and getattr(cfg_bat, 'ocv_charge_prof', None) is not None:
+            curva_ocv_ativa = cfg_bat.ocv_charge_prof
+        elif p_ca_w < 0 and getattr(cfg_bat, 'ocv_discharge_prof', None) is not None:
+            curva_ocv_ativa = cfg_bat.ocv_discharge_prof
+        else:
+            curva_ocv_ativa = ocv_prof
+
         # Tensão OCV atual (V) por célula
-        v_ocv_celula = _interpolar_ocv(soc_out[k], soc_prof, ocv_prof)
+        v_ocv_celula = _interpolar_ocv(soc_out[k], soc_prof, curva_ocv_ativa)
         if v_ocv_celula <= 0.0:
-            v_ocv_celula = ocv_prof[0] if ocv_prof[0] > 0 else 1.0
+            v_ocv_celula = curva_ocv_ativa[0] if curva_ocv_ativa[0] > 0 else 1.0
             
         # Tensão real do banco
         v_ocv_banco = v_ocv_celula * Ns
-
-        # 1. Potência solicitada pelo lado CA (W) — limitada à potência máxima do BESS
-        p_ca_w = np.clip(pot_w[k], -p_bess, p_bess)
         
         # 2. Potência efetiva na Bateria DC (Aplicando o Rendimento)
         #  Convenção de sinal:
