@@ -74,7 +74,7 @@ jobs:
               files = results.get('files', [])
 
               # text/plain para upload real do arquivo txt gerado 
-              media = MediaFileUpload(local_file, mimetype='text/plain', resumable=True)
+              media = MediaFileUpload(local_file, mimetype='text/plain', resumable=False)
 
               if files:
                   file_id = files[0]['id']
