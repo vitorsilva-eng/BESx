@@ -3,7 +3,7 @@ import logging
 import colorlog
 import sys
 
-def setup_logger():
+def setup_logger() -> logging.Logger:
     """
     Configura o logger principal com saída colorida no console.
     """

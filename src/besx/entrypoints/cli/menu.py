@@ -54,7 +54,7 @@ def exibir_menu_inicial() -> tuple[str, str]:
 #  Seções internas do menu                                            #
 # ------------------------------------------------------------------ #
 
-def _imprimir_cabecalho():
+def _imprimir_cabecalho() -> None:
     print()
     print("=" * 58)
     print("      BESx — Battery Energy Storage Simulator")

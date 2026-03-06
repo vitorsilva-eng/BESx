@@ -12,8 +12,9 @@ from openpyxl.utils import get_column_letter
 from besx.infrastructure.logging.logger import logger
 import os
 
+from typing import List, Dict, Any, Optional
 
-def gerar_relatorio_validacao(file_manager, config, resultados_mensais, calculos_detalhados, prefixo=""):
+def gerar_relatorio_validacao(file_manager: Any, config: Any, resultados_mensais: List[Dict[str, Any]], calculos_detalhados: List[Dict[str, Any]], prefixo: str = "") -> str:
     """
     Gera um relatório completo de validação em Excel com múltiplas sheets.
     
@@ -52,7 +53,7 @@ def gerar_relatorio_validacao(file_manager, config, resultados_mensais, calculos
     return caminho_excel
 
 
-def criar_sheet_configuracao(writer, config):
+def criar_sheet_configuracao(writer: pd.ExcelWriter, config: Any) -> None:
     """
     Cria a sheet com todos os parâmetros de configuração.
     """
@@ -95,14 +96,14 @@ def criar_sheet_configuracao(writer, config):
     df_config.to_excel(writer, sheet_name='Configuracao', index=False)
 
 
-def criar_sheet_resumo_mensal(writer, df_resultados):
+def criar_sheet_resumo_mensal(writer: pd.ExcelWriter, df_resultados: pd.DataFrame) -> None:
     """
     Cria a sheet com resumo mensal (similar ao resultados_completos.xlsx).
     """
     df_resultados.to_excel(writer, sheet_name='Resumo_Mensal', index=False)
 
 
-def criar_sheets_calculos_detalhados(writer, calculos_detalhados):
+def criar_sheets_calculos_detalhados(writer: pd.ExcelWriter, calculos_detalhados: List[Dict[str, Any]]) -> None:
     """
     Cria sheets detalhadas para cada mês (Ciclo e Calendário).
     
@@ -124,7 +125,7 @@ def criar_sheets_calculos_detalhados(writer, calculos_detalhados):
         df_calendario.to_excel(writer, sheet_name=nome_sheet_cal, index=False)
 
 
-def formatar_workbook(caminho_excel):
+def formatar_workbook(caminho_excel: str) -> None:
     """
     Aplica formatação profissional ao workbook:
     - Cabeçalhos em negrito com cor de fundo
@@ -168,12 +169,12 @@ def formatar_workbook(caminho_excel):
 
 
 def exportar_debug_degradacao(
-    dados,
-    etapa,
-    mes_id=None,
-    sufixo="",
-    pasta_debug=None
-):
+    dados: Any,
+    etapa: str,
+    mes_id: Optional[int] = None,
+    sufixo: str = "",
+    pasta_debug: Optional[str] = None
+) -> str:
     """
     Exporta dados intermediários do modelo de degradação para validação externa (Excel).
     """
@@ -215,7 +216,7 @@ def exportar_debug_degradacao(
     return caminho
 
 
-def export_xlsx(df_list, filename):
+def export_xlsx(df_list: List[pd.DataFrame], filename: str) -> None:
     """
     Exporta uma lista de DataFrames para um arquivo Excel com múltiplas abas.
     """

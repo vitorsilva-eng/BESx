@@ -2,9 +2,10 @@
 import os
 import datetime
 import pandas as pd
+from typing import Any
 from besx.infrastructure.logging.logger import logger
 
-def gerar_relatorio_txt(file_manager, config, df_res, sim_duration_str, prefixo=""):
+def gerar_relatorio_txt(file_manager: Any, config: Any, df_res: pd.DataFrame, sim_duration_str: str, prefixo: str = "") -> str:
     """
     Gera um relatório de texto detalhado com metadados, configuração 
     e resumo dos resultados da simulação.

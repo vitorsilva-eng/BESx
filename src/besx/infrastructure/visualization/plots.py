@@ -7,7 +7,7 @@ from besx.config import CONFIGURACAO
 from besx.infrastructure.logging.logger import logger
 
 
-def imprimir_histograma(df_rainflow_mes, ano, mes):
+def imprimir_histograma(df_rainflow_mes: pd.DataFrame, ano: int, mes: int) -> None:
     """
     Imprime um histograma de contagem de ciclos agrupados por DOD (Range)
     para um mês/ano específico.
@@ -37,7 +37,7 @@ def imprimir_histograma(df_rainflow_mes, ano, mes):
         contagem = linha['Count']
         logger.info(f"-> Encontrado(s) {contagem} ciclo(s) com DOD de: {dod:.2f}%")
 
-def plotar_capacidade_mensal(df_resultados, nome_arquivo_saida):
+def plotar_capacidade_mensal(df_resultados: pd.DataFrame, nome_arquivo_saida: str) -> None:
     """
     Gera um gráfico da capacidade restante da bateria ao final de cada mês.
 
@@ -113,7 +113,7 @@ def plotar_capacidade_mensal(df_resultados, nome_arquivo_saida):
     logger.info("Imagem gerada com sucesso.")
 
 
-def plotar_composicao_degradacao(df_resultados, nome_arquivo_saida):
+def plotar_composicao_degradacao(df_resultados: pd.DataFrame, nome_arquivo_saida: str) -> None:
     """
     Gera um gráfico de área empilhada mostrando a contribuição
     de Ciclo vs. Calendário na degradação total acumulada.

@@ -17,8 +17,9 @@ from besx.infrastructure.logging.logger import logger
 
 # Importa a configuração centralizada
 from besx.config import CONFIGURACAO
+from typing import Optional, List, Any
 
-def data_handle(nome_arquivo=None, meses_alvo=None, file_manager=None):
+def data_handle(nome_arquivo: Optional[str] = None, meses_alvo: Optional[int] = None, file_manager: Any = None) -> List[pd.DataFrame]:
     """
     Função principal do módulo: orquestra o carregamento e fatiamento dos dados.
     """
@@ -83,7 +84,7 @@ def data_handle(nome_arquivo=None, meses_alvo=None, file_manager=None):
 
 
 #1 Execução
-def selecionar_arquivo_database():
+def selecionar_arquivo_database() -> Optional[str]:
     logger.info("Carregando dados de entrada...")
     from besx.config import PATH_DATABASE
     pasta_database = PATH_DATABASE
@@ -132,7 +133,7 @@ def selecionar_arquivo_database():
 #2 Execução
 
 
-def identificar_tipo_arquivo(nome_arquivo_selecionado):
+def identificar_tipo_arquivo(nome_arquivo_selecionado: str) -> Optional[str]:
     """
     Analisa a extensão, converte se necessário e RETORNA o nome do arquivo .mat final.
     """
@@ -173,7 +174,7 @@ def identificar_tipo_arquivo(nome_arquivo_selecionado):
 
 
 #3 Execução
-def carregar_dados_mat(filename):
+def carregar_dados_mat(filename: str) -> Optional[pd.DataFrame]:
     """
     (Função interna) Carrega um arquivo .mat e o converte para um DataFrame.
     """
@@ -196,7 +197,7 @@ def carregar_dados_mat(filename):
         logger.error(f"Erro ao carregar ou converter '{filename}': {e}")
         return None
 
-def analisar_integridade_dados(df):
+def analisar_integridade_dados(df: pd.DataFrame) -> Optional[float]:
     """
     Analisa os dados assumindo que a primeira coluna é Tempo (em minutos)
     e a segunda é Potência.
@@ -267,7 +268,7 @@ def analisar_integridade_dados(df):
     
     return dt_minutos
 
-def ajustar_duracao_dados(df, dt_minutos, meses_alvo=None, interativo=True):
+def ajustar_duracao_dados(df: pd.DataFrame, dt_minutos: float, meses_alvo: Optional[int] = None, interativo: bool = True) -> pd.DataFrame:
     """
     Expande ou corta os dados.
     Baseia-se em meses padronizados de 30 dias.
@@ -346,7 +347,7 @@ def ajustar_duracao_dados(df, dt_minutos, meses_alvo=None, interativo=True):
 
 
 
-def fatiar_dados_mensais(df):
+def fatiar_dados_mensais(df: pd.DataFrame) -> List[pd.DataFrame]:
     """
     Divide o DataFrame em uma lista de DataFrames mensais.
     Considera um mês padrão de 30 dias.

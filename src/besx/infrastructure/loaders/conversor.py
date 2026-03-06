@@ -4,13 +4,15 @@ import numpy as np
 import os
 from besx.infrastructure.logging.logger import logger
 
+from typing import Optional
+
 def expandir_curva_carga(
-    caminho_arquivo, 
-    coluna_data='Data', 
-    coluna_potencia='Potencia', 
-    anos_para_expandir=10, 
-    separador_csv=','
-):
+    caminho_arquivo: str, 
+    coluna_data: str = 'Data', 
+    coluna_potencia: str = 'Potencia', 
+    anos_para_expandir: int = 10, 
+    separador_csv: str = ','
+) -> Optional[pd.DataFrame]:
     """
     Lê uma curva de carga, detecta a resolução e expande para N anos.
     Assume crescimento vegetativo de 0%.
@@ -97,7 +99,7 @@ def expandir_curva_carga(
     return df_expandido
 
 
-def converter_csv_para_mat(csv_path, mat_path, var_name):
+def converter_csv_para_mat(csv_path: str, mat_path: str, var_name: str) -> None:
     """
     Converte um arquivo CSV específico para o formato .mat do MATLAB.
 

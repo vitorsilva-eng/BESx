@@ -45,9 +45,9 @@ class ResultadoMes(BaseModel):
     Rainflow_Cycles: List[Any]
 
 class SimulationManager:
-    def __init__(self, config, backend: str = "python", data_file: str = None,
+    def __init__(self, config: Any, backend: str = "python", data_file: str = None,
                  on_mes_complete: callable = None, sim_until_eol: bool = False,
-                 resume_folder: str = None):
+                 resume_folder: str = None) -> None:
         self.config = config
         self.backend = backend  # "python" | "plecs"
         self.data_file = data_file # Opcional: nome do arquivo em /database
@@ -79,7 +79,7 @@ class SimulationManager:
         # Carrega checkpoint se existir
         self._carregar_checkpoint()
 
-    def _carregar_checkpoint(self):
+    def _carregar_checkpoint(self) -> None:
         caminho_checkpoint = self.file_manager.get_data_path("checkpoint.json")
         if os.path.exists(caminho_checkpoint):
             try:
@@ -100,7 +100,7 @@ class SimulationManager:
             except Exception as e:
                 logger.error(f"Erro ao carregar o checkpoint.json: {e}")
 
-    def _salvar_checkpoint(self):
+    def _salvar_checkpoint(self) -> None:
         caminho_checkpoint = self.file_manager.get_data_path("checkpoint.json")
         estado = {
             "soh_atual": self.soh_atual,
@@ -117,7 +117,7 @@ class SimulationManager:
         except Exception as e:
             logger.warning(f"Erro ao salvar checkpoint.json: {e}")
 
-    def run(self):
+    def run(self) -> None:
         self.start_time = datetime.datetime.now()
         logger.info("Iniciando a Execução via SimulationManager")
         logger.info(f"Resultados serão salvos em: {self.file_manager.sim_folder}")
@@ -166,7 +166,7 @@ class SimulationManager:
         # --- ETAPA 3: RESULTADOS FINAIS ---
         self._finalizar_simulacao()
 
-    def _processar_mes(self, df_mes, mes_id, total_meses):
+    def _processar_mes(self, df_mes: pd.DataFrame, mes_id: int, total_meses: int) -> None:
         # 1. Simulação da bateria (backend escolhido no menu)
         perfil_soc_mes = run_monthly_simulation(
             df_mes, self.soh_atual, self.soc_zero, mes_id,
@@ -276,7 +276,7 @@ class SimulationManager:
         if self.on_mes_complete:
             self.on_mes_complete(perfil_soc_mes, dados_mes, df_mes)
 
-    def _finalizar_simulacao(self):
+    def _finalizar_simulacao(self) -> None:
         df_resultados_finais = pd.DataFrame(self.resultados_mensais)
         
         logger.info(f"\n--- Resultado Final Consolidado ---\n{df_resultados_finais.tail()}")

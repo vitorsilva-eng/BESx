@@ -82,7 +82,7 @@ def extrair_soc_final(df_soc: pd.DataFrame) -> float:
     return soc_final
 
 
-def close_plecs_server():
+def close_plecs_server() -> None:
     """
     Tenta fechar o servidor PLECS (no-op se backend Python estiver em uso).
     """
@@ -249,7 +249,8 @@ def _run_plecs(
         return None
 
 
-def _to_native_types(data):
+from typing import Any
+def _to_native_types(data: Any) -> Any:
     """Converte tipos NumPy para tipos Python nativos (compatibilidade XMLRPC)."""
     if isinstance(data, dict):
         return {k: _to_native_types(v) for k, v in data.items()}

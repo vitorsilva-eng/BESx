@@ -3,7 +3,7 @@
 ## TO DO CODE
 
     [X] Verificar o nível de corrente que passa nas células
-    [ ] Comparar a simulação no plecs com a simulação em python
+    [X] Comparar a simulação no plecs com a simulação em python
     [ ] Implementar a bateria de Rodrigo para fazer um Benchmarking
     [ ] Implementar uma Curva OCVxSOC para carga e outra para descarga
     [ ] Atualizar para receber os dados da curva de carga e decidir se carrega ou descarrega
@@ -14,6 +14,7 @@
         - [ ] Tentar obter uma curva com os dados do local?
     [] Testar pediar a IA para gerar o python do arquivo plecs
     [ ] Implementar o cálculo do RUL (Remaining Useful Life / Vida Útil Remanescente)
+    [ ] Implementar um ganho de resistência para a bateria?
 
 ## TO_DO_DASH
 
@@ -30,9 +31,9 @@
 
 ## Sugestões de Melhoria (Code Cleanliness & Efficiency)
 
-    [] Adicionar Type Hints (anotações de tipo) em todas as funções.
-    [] Implementar Docstrings (padrão Google/NumPy) para documentação.
-    [] Usar `dataclasses` ou `NamedTuple` para estruturar resultados (ao invés de dicts soltos).
-    [] Implementar Checkpointing: Salvar estado intermediário para retomar simulação em caso de falha.
-    [] Modularizar: Separar CLI (interface) da lógica de simulação (Core).
-    [] Tratar while ture e inputs (argparse)
+    [x] Adicionar Type Hints (anotações de tipo) em todas as funções.
+    [x] Implementar Docstrings (padrão Google/NumPy) para documentação.
+    [x] Usar `dataclasses`, `Pydantic` ou `NamedTuple` para estruturar resultados (ao invés de dicts soltos).
+    [x] Implementar Checkpointing: Salvar estado intermediário para retomar simulação em caso de falha.
+    [x] Modularizar: Separar CLI (interface) da lógica de simulação (Core).
+    [x] Tratar while ture e inputs (argparse)
