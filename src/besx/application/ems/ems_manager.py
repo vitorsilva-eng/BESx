@@ -119,6 +119,60 @@ class EMSManager:
             
         return df
 
-    def run(self, df_carga: pd.DataFrame, **kwargs) -> pd.DataFrame:
-        """Placeholder for Strategy Execution and Validation"""
-        pass
+    def run(self, df_carga: pd.DataFrame, time_col: str, load_col: str, soc_inicial: float = 50.0, **kwargs) -> pd.DataFrame:
+        """
+        Validates data, executes strategies sequentially, and calculates heuristic metrics.
+        
+        Args:
+            df_carga: Raw input DataFrame.
+            time_col: Name of datetime column.
+            load_col: Name of load column.
+            soc_inicial: Initial SOC in percentage (0 to 100). Default is 50.0.
+            
+        Returns:
+            DataFrame with `Potencia_Bateria_W`, heuristic `SOC_Heuristico`, and other metrics.
+        """
+        # Step 1: Validation and Standardization
+        df_processed = self.validate_and_prepare_input(df_carga.copy(), time_col, load_col)
+        
+        # Initialize Potencia_Bateria_W to 0 conceptually (no dispatch) if not present
+        if 'Potencia_Bateria_W' not in df_processed.columns:
+            df_processed['Potencia_Bateria_W'] = 0.0
+
+        # Step 2: Sequential Execution of Strategies
+        for strategy in self.strategies:
+            # We pass the currently processed dataframe down the chain. 
+            # Note for V2: Complex multi-strategy chains will need careful conflict resolution.
+            df_processed = strategy.execute(df_processed, self.bess_ems, time_col=time_col, load_col='Carga_W', **kwargs)
+
+        # Step 3: Heuristic SOC integration (REQ-11)
+        if 'Potencia_Bateria_W' not in df_processed.columns:
+            logger.warning("No strategy defined Potencia_Bateria_W. Output will just reflect zero dispatch.")
+            df_processed['Potencia_Bateria_W'] = 0.0
+
+        # Create time deltas explicitly for integration
+        dts_hours = df_processed[time_col].diff().dt.total_seconds() / 3600.0
+        dts_hours = dts_hours.fillna(0.0)
+        
+        energy_wh = [self.capacidade_nominal_wh * (soc_inicial / 100.0)]
+        
+        for i in range(1, len(df_processed)):
+            dt_h = dts_hours.iloc[i]
+            # convention: Positive power = discharge, Negative = charge
+            # Energy[t] = Energy[t-1] - (Power[t-1] * dt)  or (Power[t] * dt) -> using Power[t] for basic discrete step
+            potencia_w = df_processed['Potencia_Bateria_W'].iloc[i]
+            
+            # Simple saturation at boundaries
+            new_energy = energy_wh[-1] - (potencia_w * dt_h)
+            new_energy = max(0.0, min(new_energy, self.capacidade_nominal_wh))
+            energy_wh.append(new_energy)
+            
+        # Calculate SOC
+        df_processed['SOC_Heuristico'] = (pd.Series(energy_wh) / self.capacidade_nominal_wh) * 100.0
+
+        # Step 4: Simple Summary Metrics (Energy moved, peak shaved)
+        # We append these as attrs or calculate them on the fly for the preview later.
+        # But we can calculate 'Carga_Ajustada_W' here for convenience
+        df_processed['Carga_Ajustada_W'] = df_processed['Carga_W'] - df_processed['Potencia_Bateria_W']
+        
+        return df_processed
