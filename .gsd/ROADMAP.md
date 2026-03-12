@@ -6,7 +6,7 @@
 ## Must-Haves (from SPEC)
 - [x] Strict CSV Data Validator
 - [x] Future-proof EMSManager Core class
-- [ ] Standalone EMS Preview UI (Charts & Metrics)
+- [x] Standalone EMS Preview UI (Charts & Metrics)
 - [ ] Commit-to-Simulation flow
 
 ## Phases
@@ -17,7 +17,7 @@
 **Requirements**: REQ-04, REQ-05, REQ-06, REQ-07, REQ-08, REQ-09, REQ-11
 
 ### Phase 2: EMS Preview UI
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Create the Streamlit interface that handles file uploads, allows exclusive strategy selection, and graphs the heuristic outcomes (Power, SOC, Metrics).
 **Requirements**: REQ-01, REQ-02, REQ-10
 
