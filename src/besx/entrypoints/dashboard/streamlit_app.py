@@ -31,6 +31,9 @@ from besx.domain.models.degradation_model import (
     calcular_rul
 )
 from besx.infrastructure.llm.gemini_analyzer import analisar_comparacao_bess
+from besx.application.ems.ems_manager import EMSManager
+from besx.infrastructure.ui.streamlit.components.ems_sidebar import render_ems_sidebar
+from besx.infrastructure.visualization.plotly_plots import plot_ems_dispatch_comparison, plot_heuristic_soc
 
 # Add tests path to sys.path if not present (to allow importing tests)
 import sys
@@ -86,6 +89,8 @@ if 'throughput' not in st.session_state: st.session_state.throughput = 0.0
 if 'energy_charge' not in st.session_state: st.session_state.energy_charge = 0.0
 if 'energy_discharge' not in st.session_state: st.session_state.energy_discharge = 0.0
 if 'config_override' not in st.session_state: st.session_state.config_override = CONFIGURACAO.modelo_degradacao.model_copy(deep=True).model_dump()
+if 'ems_active' not in st.session_state: st.session_state.ems_active = False
+if 'ems_preview_result' not in st.session_state: st.session_state.ems_preview_result = None
 
 # Custom CSS
 st.markdown("""
@@ -570,7 +575,7 @@ if sim_eol_mode:
     st.sidebar.warning("⚠️ Modo EOL ativo: a simulação ignora a duração fixa e para ao atingir o limite de capacidade.")
 
 # Tabs
-tab_live, tab_hist, tab_comp, tab_val, tab_cfg = st.tabs(["🚀 Tempo Real", "📂 Histórico", "📈 Comparativo", "✔️ Validação Engine", "⚙️ Configurações"])
+tab_live, tab_ems, tab_hist, tab_comp, tab_val, tab_cfg = st.tabs(["🚀 Tempo Real", "🔋 Gerenciador EMS", "📂 Histórico", "📈 Comparativo", "✔️ Validação Engine", "⚙️ Configurações"])
 
 # --- TAB 1: LIVE ---
 with tab_live:
@@ -704,6 +709,51 @@ with tab_live:
                 render_view_degradation(st.session_state.sim_results, month_idx=selected_month_idx, key_suffix="live_st")
             elif view_set_live == "⚡ Operacional":
                 render_view_operational(st.session_state.sim_results, display_soc, display_input, month_idx=selected_month_idx, key_suffix="live_st")
+
+# --- TAB EMS: EMS MANAGER ---
+with tab_ems:
+    st.header("🔋 Gerenciador de Estratégias (EMS)")
+    
+    # Initialize Manager
+    ems_manager = EMSManager(
+        p_bess_max_w=CONFIGURACAO.bateria.potencia_nominal_w,
+        capacidade_nominal_wh=CONFIGURACAO.bateria.capacidade_nominal_wh
+    )
+    
+    # Render Sidebar Configuration for EMS
+    render_ems_sidebar(ems_manager)
+    
+    if st.session_state.ems_active and st.session_state.ems_preview_result is not None:
+        df_res = st.session_state.ems_preview_result
+        
+        # Metric row for Preview
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            energy_moved = (df_res['Potencia_Bateria_W'].abs().sum() * (CONFIGURACAO.dados_entrada.dt_minutos / 60.0)) / 1000.0
+            st.metric("Energia Movimentada", f"{energy_moved:.2f} kWh")
+        with c2:
+            peak_orig = df_res['Carga_W'].max()
+            peak_adj = df_res['Carga_Ajustada_W'].max()
+            reduction = (peak_orig - peak_adj) / 1000.0
+            st.metric("Redução de Pico", f"{reduction:.2f} kW", delta=f"{- (1 - peak_adj/peak_orig)*100:.1f}%")
+        with c3:
+            st.metric("Ponto de Início SOC", f"{df_res['SOC_Heuristico'].iloc[0]:.1f}%")
+            
+        st.markdown("---")
+        
+        # Plots
+        fig_dispatch = plot_ems_dispatch_comparison(df_res, df_res.columns[0])
+        st.plotly_chart(fig_dispatch, use_container_width=True)
+        
+        fig_soc = plot_heuristic_soc(df_res, df_res.columns[0])
+        st.plotly_chart(fig_soc, use_container_width=True)
+        
+        # Commit Button (Phase 3 Placeholder)
+        st.markdown("---")
+        if st.button("🚀 Confirmar e Injetar na Simulação", type="primary"):
+            st.info("Feature de 'Commit' (Phase 3) está sendo planejada. Por enquanto, valide o preview.")
+    else:
+        st.info("👆 Utilize a barra lateral para carregar um perfil de carga CSV e configurar o EMS.")
 
 # --- TAB 2: HISTORY ---
 with tab_hist:
