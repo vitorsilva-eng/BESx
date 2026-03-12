@@ -7,7 +7,7 @@
 - [x] Strict CSV Data Validator
 - [x] Future-proof EMSManager Core class
 - [x] Standalone EMS Preview UI (Charts & Metrics)
-- [ ] Commit-to-Simulation flow
+- [x] Commit-to-Simulation flow
 
 ## Phases
 
@@ -22,6 +22,6 @@
 **Requirements**: REQ-01, REQ-02, REQ-10
 
 ### Phase 3: Simulation Pipeline Integration
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Wire the "Commit" action from the Preview UI directly into the `SimulationManager`, ensuring compatibility across the mathematical engines. Explicitly discuss and decide on serialization (in-memory vs. `.mat` file) before implementation.
 **Requirements**: REQ-03

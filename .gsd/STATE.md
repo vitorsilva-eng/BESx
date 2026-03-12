@@ -1,11 +1,11 @@
 ## Current Position
-- **Phase**: 2 (completed)
-- **Task**: All UI/Preview tasks complete
+- **Phase**: 3 (completed)
+- **Milestone**: v1.0 EMS Integration (completed)
 - **Status**: Verified
 
-## Last Session Summary
-Phase 2 executed successfully. Integrated the EMS Preview UI with standalone charts and KPIs.
+## Summary of Accomplishments
+Implemented a complete EMS Manager for BESx, from strict validation to strategy preview and simulation integration. The system is now robust and academic-ready for isolated strategy validation.
 
 ## Next Steps
-1. Proceed to Phase 3 (Simulation Pipeline Integration)
-2. Decide on serialization (in-memory vs .mat)
+- User to perform end-to-end mission profile simulations for the paper.
+- Plan V2 for multi-strategy stacking and dynamic arbitrage.

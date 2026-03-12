@@ -536,7 +536,13 @@ st.sidebar.title("🔋 BESx Dashboard")
 is_running = st.session_state.sim_status == "running"
 
 pasta_db = 'database'
-arquivos_db = [f for f in os.listdir(pasta_db) if f.endswith(('.mat', '.csv'))] if os.path.exists(pasta_db) else []
+arquivos_db = sorted([f for f in os.listdir(pasta_db) if f.endswith(('.mat', '.csv'))], reverse=True) if os.path.exists(pasta_db) else []
+
+# Check for EMS generated file and push it to the top if it exists
+if "ems_planned_profile.csv" in arquivos_db:
+    arquivos_db.remove("ems_planned_profile.csv")
+    arquivos_db.insert(0, "ems_planned_profile.csv")
+
 data_file_sidebar = st.sidebar.selectbox("Perfil de Dados", arquivos_db if arquivos_db else ["Vazio"], disabled=is_running)
 battery_prof = st.sidebar.selectbox("Bateria", list(PERFIS_BATERIA.keys()), disabled=is_running)
 # Detecta se está rodando no Streamlit Community Cloud (via presença de variável de ambiente característica)
@@ -748,10 +754,22 @@ with tab_ems:
         fig_soc = plot_heuristic_soc(df_res, df_res.columns[0])
         st.plotly_chart(fig_soc, use_container_width=True)
         
-        # Commit Button (Phase 3 Placeholder)
+        # Commit Button (Phase 3 Integration)
         st.markdown("---")
         if st.button("🚀 Confirmar e Injetar na Simulação", type="primary"):
-            st.info("Feature de 'Commit' (Phase 3) está sendo planejada. Por enquanto, valide o preview.")
+            try:
+                # Save to disk as decided (Option B)
+                save_path = os.path.join(pasta_db, "ems_planned_profile.csv")
+                df_res.to_csv(save_path, index=False)
+                
+                st.success(f"✅ Perfil gerado e salvo em `{save_path}`")
+                st.info("O arquivo `ems_planned_profile.csv` foi selecionado automaticamente na barra lateral. Prossiga para a aba 'Tempo Real' para simular.")
+                
+                # We can't easily force the selectbox to change from here without rerunning or using session state for index
+                # But the sidebar logic above will now put it at the top.
+                st.balloons()
+            except Exception as e:
+                st.error(f"Erro ao salvar perfil: {e}")
     else:
         st.info("👆 Utilize a barra lateral para carregar um perfil de carga CSV e configurar o EMS.")
 
