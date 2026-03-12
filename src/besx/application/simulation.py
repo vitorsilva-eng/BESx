@@ -291,7 +291,7 @@ class SimulationManager:
 
         # 7. Callback para Dashboard (Live Update)
         if self.on_mes_complete:
-            self.on_mes_complete(perfil_soc_mes, dados_mes, df_mes)
+            self.on_mes_complete(perfil_soc_mes, resultado_mes.model_dump(), df_mes)
 
     def _finalizar_simulacao(self) -> None:
         """

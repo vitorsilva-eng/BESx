@@ -26,3 +26,4 @@
   [ ] plotar a tensão e corrente
   [ ] VALIDAR O MODELO DO PLECS
   [ ] FAZER O EMS COM FOCO EM LOAD SHIFTING
+  [ ] Adicionar um gráfico para validação do SOC, Tensão e Corrente comparando o plecs com o python

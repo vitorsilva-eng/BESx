@@ -88,6 +88,8 @@ def rodar_validacao(perfil_nome="LiFePO4_78Ah", backend="python"):
     
     # OCV constante para evitar taper
     cfg_bat_ideal.ocv_prof = [V_nom_cel] * len(cfg_bat_ideal.soc_prof)    
+    cfg_bat_ideal.ocv_charge_prof = None
+    cfg_bat_ideal.ocv_discharge_prof = None
     cfg_tc1 = CONFIGURACAO.model_copy(deep=True)
     cfg_tc1.bateria = cfg_bat_ideal
     logger.info(f"TC1 Diagnostic: Rs={cfg_tc1.bateria.Rs}, Rend={cfg_tc1.bateria.rendimento_pcs}, SOC_MAX={cfg_tc1.bateria.soc_max}, Vnom={V_nom_cel}")
@@ -134,6 +136,8 @@ def rodar_validacao(perfil_nome="LiFePO4_78Ah", backend="python"):
     cfg_bat_ideal.Rs = 0.0
     v_nom = (cfg_bat_ideal.v_max_celula + cfg_bat_ideal.v_min_celula) / 2.0
     cfg_bat_ideal.ocv_prof = [v_nom] * len(cfg_bat_ideal.ocv_prof)
+    cfg_bat_ideal.ocv_charge_prof = None
+    cfg_bat_ideal.ocv_discharge_prof = None
     
     config_ideal = deepcopy(CONFIGURACAO)
     config_ideal.bateria = cfg_bat_ideal
