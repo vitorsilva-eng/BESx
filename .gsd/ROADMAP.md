@@ -25,3 +25,13 @@
 **Status**: ✅ Complete
 **Objective**: Wire the "Commit" action from the Preview UI directly into the `SimulationManager`, ensuring compatibility across the mathematical engines. Explicitly discuss and decide on serialization (in-memory vs. `.mat` file) before implementation.
 **Requirements**: REQ-03
+
+### Phase 4: Advanced Comparison Metrics
+**Status**: ✅ Complete
+**Objective**: Enhance the battery comparison dashboard with deep metrics: DOD distribution, Energy throughput, Efficiency, and Operational stress.
+**Requirements**: REQ-COMPARISON-01, REQ-COMPARISON-02
+
+### Phase 5: Performance Optimization
+**Status**: 🏗️ In Progress
+**Objective**: Optimize the battery simulation (Coulomb counting) and degradation engine to achieve > 5 months/s of execution speed using Numba JIT and NumPy vectorization.
+**Requirements**: REQ-PERF-01
