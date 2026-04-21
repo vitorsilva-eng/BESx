@@ -41,6 +41,7 @@ O processamento de séries temporais de baterias exige alta eficiência, pois o 
 * **Rainflow Incremental:** É estritamente proibido rodar o algoritmo de *Rainflow* sobre todo o histórico de dados a cada atualização. O motor deve implementar uma "active-updating memory list" (pilha de memória dinâmica) que retém apenas os meios-ciclos não fechados, processando apenas a degradação incremental entre $t$ e $t+1$ [1, 8].
 * **Gestão de Estado no Streamlit:** Variáveis pesadas resultantes da simulação (como `C_cyc_tot`, listas de ciclos extraídos e o *DataFrame* de telemetria processada) devem ser protegidas usando `st.session_state`.
 * **Caching de Funções Custosas:** Operações puramente matemáticas e de leitura de dados (I/O) devem estar encapsuladas e decoradas com `@st.cache_data` para evitar estrangulamento da CPU.
+* **Aperfeiçoamento de Interface (Streamlit):** O parâmetro `use_container_width` está depreciado. Em novos desenvolvimentos ou refatorações, utilize obrigatoriamente o parâmetro `width`. Para o comportamento de largura total, use `width='stretch'`. Para o comportamento padrão de conteúdo, use `width='content'`.
 
 ## 3. Desacoplamento e Preparação PIML (Physics-Informed ML)
 

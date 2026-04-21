@@ -9,21 +9,23 @@
 
 ## Pensar nas atividades
 
-  [ ] **Load Shifting**
-  [ ] **Peak Shaving**
+  [X] **Load Shifting**
+  [X] **Peak Shaving**
   [ ] **Regulação do Fator de Potência**
   [ ] Redução da Injeção (Aproveitar geração nos cortes)
-  [ ] Afundamento de Tensão
-  [ ] Balanceamento de Tensão
-  [ ] Controle de Frequência
   [ ] Alívio de Potência na Rede (adiar expansão)
+  [ ] Balanceamento de Tensão
+
+
+  [ ] Controle de Frequência
+  [ ] Afundamento de Tensão
 
 - Será que a defasagem impacta na vida util da bateria? - Para efeito desse artigo, ignorar.
 - Coletar artigos de publicação no CBA (e qual mais?) com aplicação de baterias
 
 ## Notas de reunião
 
-  [ ] plotar a tensão e corrente
-  [ ] VALIDAR O MODELO DO PLECS
-  [ ] FAZER O EMS COM FOCO EM LOAD SHIFTING
-  [ ] Adicionar um gráfico para validação do SOC, Tensão e Corrente comparando o plecs com o python
+  [ ] Implementar funcionamento de baterias em paralelo
+  [ ] Implementar a estratégia de Regulação do Fator de Potência
+  [ ] Planejar como seria o funcionamento das estratégias em conjunto.
+  [ ] 

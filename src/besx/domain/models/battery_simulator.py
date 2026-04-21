@@ -35,7 +35,7 @@ def _interpolar_ocv(soc_frac: float, soc_prof: list, ocv_prof: list) -> float:
     """
     return float(np.interp(soc_frac, soc_prof, ocv_prof))
 
-def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, cfg_bat) -> pd.DataFrame:
+def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, cfg_bat, n_unidades: int = 1) -> pd.DataFrame:
     """
     Simula o perfil de SOC e Tensão de um mês usando integração de Coulomb e Modelo Rint.
     
@@ -48,8 +48,18 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
     col_p = next((c for c in cols if 'pot' in c.lower() and c != col_t), cols[1] if len(cols)>1 else cols[0])
 
     # 1. Extração para arrays NumPy (Acelera o loop for em mais de 50x)
-    pot_w_arr = df_mes[col_p].astype(float).values
+    pot_raw_arr = df_mes[col_p].astype(float).values
     tempos_min_arr = df_mes[col_t].astype(float).values
+    
+    # 2. Normalização de Unidades (O motor físico espera Watts [W])
+    # Se a coluna for kW, multiplica por 1000. Se for W (do Step 1), usa como está.
+    if 'kw' in col_p.lower():
+        pot_w_arr = pot_raw_arr * 1000.0
+        logger.info(f"[BatterySim] Detectado canal de potência em kW: '{col_p}'. Convertendo para Watts.")
+    else:
+        pot_w_arr = pot_raw_arr
+        logger.info(f"[BatterySim] Detectado canal de potência em Watts: '{col_p}'.")
+
     n_passos = len(pot_w_arr)
     
     # 2. Inicialização dos vetores de saída
@@ -60,33 +70,32 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
     
     soc_out[0] = soc_inicial
     
-    # Parâmetros do Banco
+    # Parâmetros do Banco (Escalados por n_unidades)
     q_efetivo_celula = cfg_bat.Ah * soh_atual
-    rs_banco = (cfg_bat.Rs * cfg_bat.Ns) / cfg_bat.Np if cfg_bat.Rs else 0.0
+    # Resistência equivalente do conjunto em paralelo (R_total = R_unit / n_unidades)
+    rs_banco = (cfg_bat.Rs * cfg_bat.Ns) / (cfg_bat.Np * n_unidades) if cfg_bat.Rs else 0.0
     v_max_banco = cfg_bat.v_max_celula * cfg_bat.Ns
     v_min_banco = cfg_bat.v_min_celula * cfg_bat.Ns
     
     soc_min_clip = cfg_bat.soc_min 
     soc_max_clip = cfg_bat.soc_max
     
-    logger.info(f"[BatterySim] Config: Rs_cel={cfg_bat.Rs}, Rend={cfg_bat.rendimento_pcs}, SOH={soh_atual:.2f}, SOC=[{soc_min_clip*100:.1f}-{soc_max_clip*100:.1f}]%")
+    logger.info(f"[BatterySim] Config: Unidades={n_unidades}, Rs_banco={rs_banco:.6f}, SOH={soh_atual:.2f}, SOC=[{soc_min_clip*100:.1f}-{soc_max_clip*100:.1f}]%")
     
     for k in range(n_passos - 1):
         
         # Delta T em horas
         dt_h = (tempos_min_arr[k + 1] - tempos_min_arr[k]) / 60.0
         
-        # Potência CA limitida pelo PCS
-        p_bess_limite = float(cfg_bat.P_bess) if cfg_bat.P_bess else float('inf')
+        # Potência CA limitada pelo PCS (Escalada por n_unidades)
+        p_bess_limite = (float(cfg_bat.P_bess) * n_unidades)
         p_ca_w = np.clip(pot_w_arr[k], -p_bess_limite, p_bess_limite)
         
         # Seleção da Curva OCV considerando Histerese (Carga vs Descarga)
-        if p_ca_w > 0 and getattr(cfg_bat, 'ocv_charge_prof', None) is not None:
+        if p_ca_w >= 0 and getattr(cfg_bat, 'ocv_charge_prof', None) is not None:
             curva_ocv_ativa = cfg_bat.ocv_charge_prof
         elif p_ca_w < 0 and getattr(cfg_bat, 'ocv_discharge_prof', None) is not None:
             curva_ocv_ativa = cfg_bat.ocv_discharge_prof
-        else:
-            curva_ocv_ativa = cfg_bat.ocv_prof
             
         # Interpolação da Tensão OCV atual
         v_ocv_celula = _interpolar_ocv(soc_out[k], cfg_bat.soc_prof, curva_ocv_ativa)
@@ -114,11 +123,10 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
         else: #rs_banco == 0 ou negativa, vira equação simples de 1 grau
             corrente_banco = p_bateria_w / v_ocv_banco
             
-        # --- NOVO: LIMITAÇÃO FÍSICA DE TENSÃO (BMS Cut-off) ---
+        # --- LIMITAÇÃO FÍSICA DE TENSÃO (BMS Cut-off) ---
         # V_term = V_ocv + I * R_s
         if rs_banco > 1e-7:
-            v_term_estimada = v_ocv_banco + (corrente_banco * rs_banco)
-            
+            v_term_estimada = v_ocv_banco + (corrente_banco * rs_banco)          
             if v_term_estimada > v_max_banco:
                 # Força a corrente para o máximo que a tensão limite permite
                 corrente_banco = (v_max_banco - v_ocv_banco) / rs_banco
@@ -130,7 +138,8 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
             v_term_estimada = v_ocv_banco
             
         # Coulomb Counting Inicial (na célula)
-        corrente_celula = corrente_banco / cfg_bat.Np
+        # I_celula = I_banco / (Np * n_unidades)
+        corrente_celula = corrente_banco / (cfg_bat.Np * n_unidades)
         delta_soc_req = (corrente_celula * dt_h / q_efetivo_celula)  # [0-1]
         
         # Atualiza e clipa o SOC
@@ -140,7 +149,7 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
         # Se o SOC bateu no limite (bateria cheia ou vazia), a corrente real foi menor
         if abs(delta_soc_real) < abs(delta_soc_req) and abs(delta_soc_req) > 1e-9:
             corrente_celula_real = delta_soc_real * q_efetivo_celula / dt_h
-            corrente_banco = corrente_celula_real * cfg_bat.Np
+            corrente_banco = corrente_celula_real * (cfg_bat.Np * n_unidades)
             
             # Recalcula a tensão terminal real com a corrente reduzida
             if rs_banco > 1e-7:

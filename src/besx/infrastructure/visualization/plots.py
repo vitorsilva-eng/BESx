@@ -7,36 +7,6 @@ from besx.config import CONFIGURACAO
 from besx.infrastructure.logging.logger import logger
 
 
-def imprimir_histograma(df_rainflow_mes: pd.DataFrame, ano: int, mes: int) -> None:
-    """
-    Imprime um histograma de contagem de ciclos agrupados por DOD (Range)
-    para um mês/ano específico.
-
-    Args:
-        df_rainflow_mes (pd.DataFrame): DataFrame com os ciclos rainflow ('Range', 'Count').
-        ano (int): O ano sendo processado (para o título).
-        mes (int): O mês sendo processado (para o título).
-    """
-    logger.info(f"--- Histograma de Ciclos do Mes {mes}/{ano} ---")
-
-    if df_rainflow_mes.empty:
-        logger.warning("   -> Nenhum ciclo rainflow encontrado para histograma.")
-        return
-
-    df_local = df_rainflow_mes.copy()
-
-    # Lê o parâmetro de arredondamento do config
-    hist_dp = CONFIGURACAO.modelo_degradacao.ciclo.range_round_dp
-    
-    df_local['range_rounded'] = df_local['Range'].round(hist_dp)
-    
-    histograma_df = df_local.groupby('range_rounded')['Count'].sum().reset_index()
-    
-    for _, linha in histograma_df.iterrows():
-        dod = linha['range_rounded']
-        contagem = linha['Count']
-        logger.info(f"-> Encontrado(s) {contagem} ciclo(s) com DOD de: {dod:.2f}%")
-
 def plotar_capacidade_mensal(df_resultados: pd.DataFrame, nome_arquivo_saida: str) -> None:
     """
     Gera um gráfico da capacidade restante da bateria ao final de cada mês.

@@ -26,17 +26,41 @@ class LoadShiftingStrategy(BaseStrategy):
     """Wrapper for the existing Load Shifting algorithm."""
     
     def execute(self, df_carga: pd.DataFrame, bess_ems: BessEMS, **kwargs) -> pd.DataFrame:
-        # Assumes df_carga already has the correct column names for the engine ('Carga_W' or passed via kwargs)
+        col_tempo = kwargs.get('time_col', 'Time')
         col_carga = kwargs.get('load_col', 'Carga_W')
-        df_out = bess_ems.gerar_perfil_load_shifting(df_carga, col_carga)
+        
+        df_out = bess_ems.gerar_perfil_load_shifting(
+            df_carga=df_carga,
+            hora_inicio_carga=kwargs.get('hora_inicio_carga', 0),
+            hora_fim_carga=kwargs.get('hora_fim_carga', 0),
+            hora_inicio_descarga=kwargs.get('hora_inicio_descarga', 0),
+            hora_fim_descarga=kwargs.get('hora_fim_descarga', 0),
+            limite_demanda_kw=kwargs.get('limite_demanda_kw', 0.0),
+            ignorar_fins_de_semana=kwargs.get('ignorar_fins_de_semana', True),
+            feriados=kwargs.get('feriados', None),
+            coluna_tempo=col_tempo,
+            coluna_carga=col_carga
+        )
         return df_out
 
 class PeakShavingStrategy(BaseStrategy):
     """Wrapper for the existing Peak Shaving algorithm."""
     
     def execute(self, df_carga: pd.DataFrame, bess_ems: BessEMS, **kwargs) -> pd.DataFrame:
+        col_tempo = kwargs.get('time_col', 'Time')
         col_carga = kwargs.get('load_col', 'Carga_W')
-        df_out = bess_ems.gerar_perfil_peak_shaving(df_carga, col_carga)
+        limite = kwargs.get('limite_demanda_kw', 0.0)
+        faixa_kw = kwargs.get('faixa_seguranca_kw', 0.0)
+        faixa_pct = kwargs.get('faixa_seguranca_pct', 0.0)
+        
+        df_out = bess_ems.gerar_perfil_peak_shaving(
+            df_carga=df_carga,
+            limite_demanda_kw=limite,
+            faixa_seguranca_kw=faixa_kw,
+            faixa_seguranca_pct=faixa_pct,
+            coluna_tempo=col_tempo,
+            coluna_carga=col_carga
+        )
         return df_out
 
 
@@ -50,7 +74,7 @@ class EMSManager:
         self.strategies = strategies
         self.p_bess_max_w = p_bess_max_w
         self.capacidade_nominal_wh = capacidade_nominal_wh
-        self.bess_ems = BessEMS(p_bess_max_w=self.p_bess_max_w, capacidade_nominal_wh=self.capacidade_nominal_wh)
+        self.bess_ems = BessEMS()
         
     def validate_and_prepare_input(self, df: pd.DataFrame, time_col: str, load_col: str) -> pd.DataFrame:
         """
@@ -141,9 +165,12 @@ class EMSManager:
 
         # Step 2: Sequential Execution of Strategies
         for strategy in self.strategies:
-            # We pass the currently processed dataframe down the chain. 
-            # Note for V2: Complex multi-strategy chains will need careful conflict resolution.
-            df_processed = strategy.execute(df_processed, self.bess_ems, time_col=time_col, load_col='Carga_W', **kwargs)
+            # Execute the strategy and get ONLY the battery power result
+            df_out = strategy.execute(df_processed, self.bess_ems, time_col=time_col, load_col='Carga_W', **kwargs)
+            
+            # Merge the result back into the main processed dataframe
+            if 'Potencia_Bateria_W' in df_out.columns:
+                df_processed['Potencia_Bateria_W'] = df_out['Potencia_Bateria_W'].values
 
         # Step 3: Heuristic SOC integration (REQ-11)
         if 'Potencia_Bateria_W' not in df_processed.columns:
@@ -154,25 +181,36 @@ class EMSManager:
         dts_hours = df_processed[time_col].diff().dt.total_seconds() / 3600.0
         dts_hours = dts_hours.fillna(0.0)
         
-        energy_wh = [self.capacidade_nominal_wh * (soc_inicial / 100.0)]
+        energy_wh = [0.0]  # Start balanced at 0.0
         
         for i in range(1, len(df_processed)):
             dt_h = dts_hours.iloc[i]
-            # convention: Positive power = discharge, Negative = charge
-            # Energy[t] = Energy[t-1] - (Power[t-1] * dt)  or (Power[t] * dt) -> using Power[t] for basic discrete step
             potencia_w = df_processed['Potencia_Bateria_W'].iloc[i]
             
-            # Simple saturation at boundaries
-            new_energy = energy_wh[-1] - (potencia_w * dt_h)
-            new_energy = max(0.0, min(new_energy, self.capacidade_nominal_wh))
-            energy_wh.append(new_energy)
+            # Integral: Energy[t] = Energy[t-1] + (Power[t] * dt)
+            # (Convention: Positive Power = Charge = Increases Energy)
+            # Since Power is in Watts, we divide by 1000 for kWh
+            delta_kwh = (potencia_w * dt_h) / 1000.0
+            new_energy_kwh = energy_wh[-1] + delta_kwh
+            energy_wh.append(new_energy_kwh)
             
-        # Calculate SOC
-        df_processed['SOC_Heuristico'] = (pd.Series(energy_wh) / self.capacidade_nominal_wh) * 100.0
+        # Calculate Accumulated Energy Balance
+        # Assigning as a list avoids index misalignment issues
+        df_processed['Energia_Acumulada_kWh'] = energy_wh
 
-        # Step 4: Simple Summary Metrics (Energy moved, peak shaved)
-        # We append these as attrs or calculate them on the fly for the preview later.
-        # But we can calculate 'Carga_Ajustada_W' here for convenience
-        df_processed['Carga_Ajustada_W'] = df_processed['Carga_W'] - df_processed['Potencia_Bateria_W']
+        # Step 4: Final Calculations and Status
+        # Carga Ajustada (Ponto de vista da rede: Carga + Bateria)
+        df_processed['Carga_Ajustada_W'] = df_processed['Carga_W'] + df_processed['Potencia_Bateria_W']
+        
+        # Bateria em kW para exportação amigável
+        df_processed['Bateria_kW'] = df_processed['Potencia_Bateria_W'] / 1000.0
+        
+        # Determine Status operacional (Convenção Ponto de Vista da Carga: Positivo = Carga)
+        def get_status(p_w):
+            if p_w > 0.1: return "CHARGE"
+            if p_w < -0.1: return "DISCHARGE"
+            return "IDLE"
+            
+        df_processed['Status'] = df_processed['Potencia_Bateria_W'].apply(get_status)
         
         return df_processed

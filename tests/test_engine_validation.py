@@ -12,11 +12,6 @@ import numpy as np
 import rainflow
 import matplotlib.pyplot as plt
 from copy import deepcopy
-
-# Adicionar src ao PYTHONPATH para execucao direta se necessario
-if os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')) not in sys.path:
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
-
 from besx.config import CONFIGURACAO, PERFIS_BATERIA
 from besx.domain.models.battery_simulator import picos_e_vales
 from besx.domain.models.degradation_model import dano_ciclo, dano_calendar
@@ -27,7 +22,13 @@ import importlib
 import besx.infrastructure.plecs.plecs_connector
 import besx.domain.models.battery_simulator
 
-def rodar_validacao(perfil_nome="LiFePO4_78Ah", backend="python"):
+# Adicionar src ao PYTHONPATH para execucao direta se necessario
+if os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')) not in sys.path:
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+
+
+
+def rodar_validacao(perfil_nome="Sany_314Ah_Validation", backend="python"):
     # Imports locais para evitar problemas de circularidade ou cache no Streamlit
     from besx.infrastructure.plecs.plecs_connector import run_monthly_simulation
     from besx.domain.models.battery_simulator import picos_e_vales
@@ -44,6 +45,7 @@ def rodar_validacao(perfil_nome="LiFePO4_78Ah", backend="python"):
         "historico_degradacao": None,
         "tc3_params": {},
         "history_meses": None,
+        "cross_data": None,
         "assertions": {}
     }
 
@@ -233,7 +235,72 @@ def rodar_validacao(perfil_nome="LiFePO4_78Ah", backend="python"):
     }
 
     # =========================================================
-    # 4. Exportação via Relatório
+    # 4. Cross-Validation (PLECS vs Python) - TC4 [VERSÃO V2]
+    # =========================================================
+    logger.info(">>> Rodando Test Case 4: PLECS vs Python Cross-Validation (V2)")
+    
+    # Perfil Dinâmico V2: Degraus de Potência para testar transientes e regime permanente
+    t_v2 = np.arange(0, 121, 1)
+    p_v2 = [200]*30 + [-200]*30 + [100]*30 + [-100]*31
+    df_tc4 = pd.DataFrame({'Tempo': t_v2, 'Potencia_kW': p_v2})
+    
+    config_cross = deepcopy(CONFIGURACAO)
+    if "Sany_314Ah_Validation" in PERFIS_BATERIA:
+        config_cross.bateria = PERFIS_BATERIA["Sany_314Ah_Validation"]
+    
+    # Mantemos Rs real para validar o modelo ôhmico
+    logger.info(f"Executando motor Python para TC4 (Perfil Dinâmico V2)...")
+    df_cross_py = run_monthly_simulation(df_tc4, soh_atual=1.0, SOC_0=0.5, ctt=4, config=config_cross, backend="python")
+    
+    # Normaliza tempo do Python (s -> min)
+    if df_cross_py is not None:
+        df_cross_py['Tempo'] = df_cross_py['Tempo'] / 60.0
+    
+    logger.info("Executando motor PLECS para TC4...")
+    try:
+        df_raw_pl = run_monthly_simulation(df_tc4, soh_atual=1.0, SOC_0=0.5, ctt=4, config=config_cross, backend="plecs")
+        if df_raw_pl is not None:
+            # Normaliza tempo do PLECS (s -> min)
+            df_raw_pl['Tempo'] = df_raw_pl['Tempo'] / 60.0
+            
+            # Alinhamento temporal via interpolação (Python grid)
+            time_grid = df_cross_py['Tempo'].values
+            soc_pl_interp = np.interp(time_grid, df_raw_pl['Tempo'].values, df_raw_pl['SOC'].values)
+            v_pl_interp   = np.interp(time_grid, df_raw_pl['Tempo'].values, df_raw_pl['Tensao_Term_V'].values)
+            i_pl_interp   = np.interp(time_grid, df_raw_pl['Tempo'].values, df_raw_pl['Corrente_A'].values)
+            
+            # DataFrame PLECS Alinhado
+            df_cross_pl = pd.DataFrame({
+                'Tempo': time_grid,
+                'SOC': soc_pl_interp,
+                'Tensao_Term_V': v_pl_interp,
+                'Corrente_A': i_pl_interp
+            })
+            
+            # Cálculo de Métricas (MAE)
+            mae_soc = np.mean(np.abs(df_cross_py['SOC'].values - soc_pl_interp)) * 100.0 # %
+            mae_v   = np.mean(np.abs(df_cross_py['Tensao_Term_V'].values - v_pl_interp)) # V
+            mae_i   = np.mean(np.abs(df_cross_py['Corrente_A'].values - i_pl_interp)) # A
+            
+            logger.info(f"Sincronismo TC4 OK. MAE SOC: {mae_soc:.4f}%, V: {mae_v:.4f}V, I: {mae_i:.4f}A")
+        else:
+            df_cross_pl = None
+            mae_soc, mae_v, mae_i = 0, 0, 0
+    except Exception as e:
+        logger.warning(f"PLECS indisponível ou falhou: {e}")
+        df_cross_pl = None
+        mae_soc, mae_v, mae_i = 0, 0, 0
+        
+    payload["cross_data"] = {
+        "python": df_cross_py,
+        "plecs": df_cross_pl,
+        "mae_soc": mae_soc,
+        "mae_v": mae_v,
+        "mae_i": mae_i
+    }
+    
+    # =========================================================
+    # 5. Exportação via Relatório
     # =========================================================
     df_resumo = pd.DataFrame({
         'Mes': list(range(1, 13)),

@@ -130,7 +130,8 @@ def _run_python(
         df_mes=df_mes_upsampled,
         soh_atual=soh_atual,
         soc_inicial=SOC_0,
-        cfg_bat=cfg_bat, # Passa o objeto Pydantic diretamente
+        cfg_bat=cfg_bat, 
+        n_unidades=config.simulacao.n_unidades
     )
 
 
@@ -169,10 +170,20 @@ def _run_plecs(
         dt = 5.0 # Fallback 5 min
     
     sim_duration_sec = len(df_mes) * dt * 60
+    logger.info(f"[PLECS] Auditoria Sincronismo: len(df)={len(df_mes)}, dt_ext={dt}, sim_duration={sim_duration_sec}s")
     
     # --- 2. Preparação do arquivo .mat (Normalização para t=0 e min->s) ---
     t_zero = df_tmp[col_t].iloc[0]
     df_tmp[col_t] = (df_tmp[col_t] - t_zero) * 60.0
+    
+    # [UNIDADES] O PLECS espera Potência em Watts. Multiplicamos se for kW.
+    if 'kw' in col_p.lower():
+        df_tmp[col_p] = df_tmp[col_p] * 1000.0
+        logger.info("[PLECS] Convertendo Potência de kW para Watts para o .mat")
+
+    # [ALINHAMENTO] Conforme análise ponto-a-ponto, P > 0 já corresponde a carga no PLECS.
+    # Removida inversão de sinal.
+    
     matriz_dados_plecs = df_tmp.to_numpy().T
 
     try:
@@ -181,6 +192,8 @@ def _run_plecs(
         savemat(entrada_pot_path, {'Pot_Input': matriz_dados_plecs})
     except Exception as e:
         logger.error(f"[PLECS] Erro ao criar arquivo .mat: {e}")
+        with open(".gsd/last_plecs_error.log", "a") as f:
+            f.write(f"[PLECS] Erro ao criar arquivo .mat: {e}\n")
         return None
 
     # Monta ModelVars e executa
@@ -204,6 +217,8 @@ def _run_plecs(
         logger.info(f"[PLECS] Simulação concluída ({sim_duration_sec}s) — mês {ctt}")
     except Exception as e:
         logger.error(f"[PLECS] Erro durante a simulação: {e}")
+        with open(".gsd/last_plecs_error.log", "a") as f:
+            f.write(f"[PLECS] Erro durante a simulação: {e}\n")
         return None
 
     # Lê o CSV de saída
@@ -226,15 +241,22 @@ def _run_plecs(
         df_plecs.rename(columns={
             cols[0]: "Tempo",
             cols[1]: "Tensao_Term_V",
+            cols[4]: "Corrente_A",
             cols[5]: "SOC"
         }, inplace=True)
+        
+        # [ALINHAMENTO] Removida inversão de sinal da corrente.
+        # A análise ponto-a-ponto confirmou que o sinal nativo do PLECS (Negativo para Descarga)
+        # já está em harmonia com o motor Python.
+        df_plecs['Corrente_A'] = pd.to_numeric(df_plecs['Corrente_A'], errors='coerce')
         
         # Garantir que os dados sejam numericos
         df_plecs['Tempo'] = pd.to_numeric(df_plecs['Tempo'], errors='coerce')
         df_plecs['Tensao_Term_V'] = pd.to_numeric(df_plecs['Tensao_Term_V'], errors='coerce')
+        df_plecs['Corrente_A'] = pd.to_numeric(df_plecs['Corrente_A'], errors='coerce')
         df_plecs['SOC'] = pd.to_numeric(df_plecs['SOC'], errors='coerce')
         
-        df_soc_mes = df_plecs[['Tempo', 'Tensao_Term_V', 'SOC']].dropna()
+        df_soc_mes = df_plecs[['Tempo', 'Tensao_Term_V', 'Corrente_A', 'SOC']].dropna()
         
         # O PLECS geralmente exporta em %, convertemos para fração (0-1) para o padrão do Backend.
         # Check robusto: se o valor máximo for > 1.1, dividimos por 100.
@@ -246,6 +268,8 @@ def _run_plecs(
         
     except Exception as e:
         logger.error(f"[PLECS] Erro ao ler arquivo de saída: {e}")
+        with open(".gsd/last_plecs_error.log", "a") as f:
+            f.write(f"[PLECS] Erro ao ler arquivo de saída: {e} - PATH TENTATIVO: {str(ROOT_DIR / 'dadosnovos.csv')}\n")
         return None
 
 

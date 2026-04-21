@@ -24,12 +24,6 @@ class EstatisticasOperacionais(BaseModel):
     Energia_Descarga_kWh: float
     Rainflow_Cycles: List[Any]
 
-def acumular_dano(Ccal_total_mes: float, acum_cal_global: float, exp_tempo: float) -> float:
-    """
-    Acumula o dano de acordo com a exponencial.
-    """
-    return (Ccal_total_mes**exp_tempo + acum_cal_global**exp_tempo)**(1/exp_tempo)
-
 def calcular_dano_referencia_serrao(model_params: ModeloDegradacaoConfig) -> float:
     """
     Calcula o dano nominal de referência conforme Serrão et al.
@@ -73,24 +67,68 @@ def calcular_fator_severidade(dano_total_mes: float, model_params: ModeloDegrada
 
 def calcular_rul(
     soh_atual_perc: float, 
-    dano_total_acumulado: float, 
-    meses_simulados: float, 
+    dano_ciclo_medio: float,
+    dano_cal_medio: float,
+    acum_ciclo_atual: float,
+    acum_cal_atual: float,
+    exp_cal: float,
     dias_por_ano_avg: float
 ) -> float:
     """
-    Projeta o Remaining Useful Life (RUL) em anos.
-    Assume morte da bateria em 80% do SOH.
-    """
-    if meses_simulados <= 0:
-        return 999.0
-        
-    dias_simulados = meses_simulados * (dias_por_ano_avg / 12)
-    dano_diario = dano_total_acumulado / dias_simulados if dias_simulados > 0 else 0.0
-    dano_anual = dano_diario * 365.25
+    Projeta o Remaining Useful Life (RUL) de forma não-linear usando busca binária.
     
-    perda_restante = soh_atual_perc - 80.0
-    rul_anos = perda_restante / dano_anual if dano_anual > 0 else 999.0
-    return float(rul_anos)
+    A projeção assume que os meses futuros terão um 'stress' bruto igual à média 
+    do histórico (dano_ciclo_medio e dano_cal_medio) e os acumula geometricamente.
+    
+    Args:
+        soh_atual_perc (float): SOH atual (ex: 98.5).
+        dano_ciclo_medio (float): Média aritmética dos danos brutos por ciclo.
+        dano_cal_medio (float): Média aritmética dos danos brutos de calendário.
+        acum_ciclo_atual (float): Total de dano cíclico acumulado (norma L2).
+        acum_cal_atual (float): Total de dano calendário acumulado (norma Ln).
+        exp_cal (float): Expoente n da regra de potência do calendário.
+        dias_por_ano_avg (float): Constante de dias por ano para conversão de tempo.
+        
+    Returns:
+        float: RUL em anos. Retorna 50.0 se o limite não for atingido em 50 anos.
+    """
+    if soh_atual_perc <= 80.0:
+        return 0.0
+
+    # Se não há dano algum detectado, evitamos cálculos
+    if dano_ciclo_medio <= 0 and dano_cal_medio <= 0:
+        return 50.0
+
+    target_loss = 20.0 # Bateria morre em 80% SOH (perda de 20%)
+    
+    def projetar_perda(meses_futuros: float) -> float:
+        """Calcula a perda total após N meses no futuro baseado no estado atual."""
+        # Acúmulo Quadrático (Ciclo)
+        fut_ciclo = np.sqrt(acum_ciclo_atual**2 + meses_futuros * (dano_ciclo_medio**2))
+        # Acúmulo de Potência (Calendário)
+        fut_cal = (acum_cal_atual**exp_cal + meses_futuros * (dano_cal_medio**exp_cal))**(1/exp_cal)
+        return float(fut_ciclo + fut_cal)
+
+    # Busca Binária para encontrar o mês do EOL (End of Life)
+    # Procuramos entre 0 e 600 meses (50 anos)
+    low = 0.0
+    high = 600.0
+    
+    # Se em 50 anos ainda não atingiu o limite, retornamos o teto
+    if projetar_perda(high) < target_loss:
+        return 50.0
+        
+    # Iterações de busca binária (15 passos garantem precisão de ~0.02 meses)
+    for _ in range(15):
+        mid = (low + high) / 2
+        if projetar_perda(mid) < target_loss:
+            low = mid
+        else:
+            high = mid
+            
+    rul_meses = (low + high) / 2
+    return float(rul_meses / 12.0)
+
 
 def dano_ciclo(lista_ciclos: list, Temp_kelvin: float, model_params: DegradacaoCicloConfig) -> tuple[float, pd.DataFrame]:
     """
@@ -248,87 +286,96 @@ def dano_calendar(lista_periodos_idle: list, Tbat_kelvin: float, model_params: D
 
     return float(Ccal_total_mes), df_calculos_calendario
 
-def calcular_estatisticas_operacionais(df_soc_saida: pd.DataFrame, df_potencia_entrada: pd.DataFrame, cap_kwh: float, lista_periodos_idle: list = None) -> EstatisticasOperacionais:
-    """
-    Analisa o comportamento do mês: Ciclos (Rainflow), C-Rates e Energia Utilizada.
-    """
-    # --- 1. Preparação (SOC e Potência) ---
-    soc_series = df_soc_saida['SOC']
-    
-    # Usamos a potência real do simulador (se disponível) ou a solicitada como fallback
-    if 'Potencia_CA_kW' in df_soc_saida.columns:
-        p_ca_kw = df_soc_saida['Potencia_CA_kW'].values
-    else:
-        # Fallback: Assume coluna 1 como potência (Entrada em Watts)
-        p_ca_kw = df_potencia_entrada.iloc[:, 1].values / 1000.0
-
-    # Delta T em horas para integração de energia
-    if len(df_soc_saida) > 1:
-        dt_h = (df_soc_saida['Tempo'].iloc[1] - df_soc_saida['Tempo'].iloc[0]) / 3600.0
-    else:
-        dt_h = 1.0 / 60.0 # 1 minuto padrão
-        
-    # --- 2. Cálculos de Energia (Integração de Riemann) ---
-    # P > 0: Bateria carregando (Energia entra)
-    # P < 0: Bateria descarregando (Energia sai)
+def _processar_balanco_energetico(p_ca_kw: np.ndarray, dt_h: float) -> tuple[float, float]:
+    """Integra as potências de carga e descarga para obter o balanço em kWh."""
     energia_carga_kwh = np.sum(p_ca_kw[p_ca_kw > 0]) * dt_h
     energia_descarga_kwh = np.abs(np.sum(p_ca_kw[p_ca_kw < 0])) * dt_h
+    return float(energia_carga_kwh), float(energia_descarga_kwh)
 
-    # --- 3. Análise de C-Rate ---
+def _analisar_c_rates(p_ca_kw: np.ndarray, cap_kwh: float) -> tuple[float, float]:
+    """Calcula as taxas de C-Rate máxima e média do período."""
     c_rates = np.abs(p_ca_kw) / cap_kwh
-    max_c_rate = c_rates.max()
-    avg_c_rate = c_rates.mean()
+    return float(c_rates.max()), float(c_rates.mean())
 
-    # --- 4. Análise de Ciclos (Rainflow) ---
+def _extrair_ciclos_rainflow(soc_series: pd.Series) -> tuple[list, float, float]:
+    """Encapsula algorimo Rainflow para extração de ciclos e cálculo de EFC/DOD."""
     from besx.domain.models.battery_simulator import picos_e_vales
     prominence = CONFIGURACAO.modelo_degradacao.ciclo.peak_prominence
     soc_series_simp = picos_e_vales(soc_series, prominence=prominence)
     ciclos_rf = list(rainflow.extract_cycles(soc_series_simp))
-
+    
     num_ciclos = len(ciclos_rf)
-
-    # DOD Médio
     dods = [x[0] for x in ciclos_rf]
     avg_dod = np.mean(dods) if dods else 0.0
-
-    # --- 5. Análise de Throughput (EFC via Rainflow) ---
-    # Cada ciclo completo (1.0 DOD) = 1 EFC.
     efc = sum([(range_val * count) for range_val, mean, count, start, end in ciclos_rf])
+    
+    return ciclos_rf, float(efc), float(avg_dod)
 
-    # --- 6. Análise de Stress / Severidade ---
+def _analisar_distribuicao_soc(soc_series: pd.Series) -> tuple[float, float, float]:
+    """Analisa a média e o tempo gasto em extremos de SOC."""
     media_soc = soc_series.mean()
-    tempo_alto_soc = (soc_series > 0.9).sum()
-    tempo_baixo_soc = (soc_series < 0.1).sum()
-
     total_amostras = len(soc_series)
-    pct_alto = (tempo_alto_soc / total_amostras) * 100
-    pct_baixo = (tempo_baixo_soc / total_amostras) * 100
+    
+    lim_alto = CONFIGURACAO.simulacao.SOC_ALTO_LIMITE
+    lim_baixo = CONFIGURACAO.simulacao.SOC_BAIXO_LIMITE
+    
+    pct_alto = ((soc_series > lim_alto).sum() / total_amostras) * 100
+    pct_baixo = ((soc_series < lim_baixo).sum() / total_amostras) * 100
+    
+    return float(media_soc), float(pct_alto), float(pct_baixo)
 
-    # --- 7. SOC Médio em Repouso ---
+def _calcular_soc_idle(soc_series: pd.Series, p_ca_kw: np.ndarray, lista_periodos_idle: list = None) -> float:
+    """Calcula o SOC médio ponderado durante os períodos de repouso."""
     if lista_periodos_idle:
         t_total_idle = sum(p['t'] for p in lista_periodos_idle)
         if t_total_idle > 0:
-            soc_idle_avg = sum(p['SOC'] * p['t'] for p in lista_periodos_idle) / t_total_idle
-        else:
-            soc_idle_avg = float('nan')
-    else:
-        idle_mask = p_ca_kw == 0.0        
-        if idle_mask.any():
-            soc_idle_avg = float(soc_series[idle_mask].mean())
-        else:
-            soc_idle_avg = float('nan')
+            return sum(p['SOC'] * p['t'] for p in lista_periodos_idle) / t_total_idle
+        return 0.0
+    
+    idle_mask = p_ca_kw == 0.0        
+    if idle_mask.any():
+        return float(soc_series[idle_mask].mean())
+    return 0.0
 
+def calcular_estatisticas_operacionais(
+    df_soc_saida: pd.DataFrame, 
+    df_potencia_entrada: pd.DataFrame, 
+    cap_kwh: float, 
+    lista_periodos_idle: list = None
+) -> EstatisticasOperacionais:
+    """
+    Analisa o comportamento operacional do mês: Ciclos, Energias e Stress de SOC.
+    
+    Orquestra a decomposição do perfil temporal em métricas estáticas utilizando
+    funções utilitárias especializadas.
+    """
+    # 1. Preparação de Dados e Delta T
+    soc_series = df_soc_saida['SOC']
+    p_ca_kw = df_soc_saida['Potencia_CA_kW'].values if 'Potencia_CA_kW' in df_soc_saida.columns \
+              else df_potencia_entrada.iloc[:, 1].values / 1000.0
+
+    dt_h = (df_soc_saida['Tempo'].iloc[1] - df_soc_saida['Tempo'].iloc[0]) / 3600.0 \
+           if len(df_soc_saida) > 1 else (1.0 / 60.0)
+
+    # 2. Execução das Análises Modulares
+    e_carga, e_descarga = _processar_balanco_energetico(p_ca_kw, dt_h)
+    max_c, avg_c = _analisar_c_rates(p_ca_kw, cap_kwh)
+    ciclos_rf, efc, avg_dod = _extrair_ciclos_rainflow(soc_series)
+    media_soc, pct_alto, pct_baixo = _analisar_distribuicao_soc(soc_series)
+    soc_idle_avg = _calcular_soc_idle(soc_series, p_ca_kw, lista_periodos_idle)
+
+    # 3. Consolidação no DTO de Saída
     return EstatisticasOperacionais(
-        Ciclos_Contagem=num_ciclos,
-        EFC_Ciclos_Equivalentes=round(float(efc), 2),
-        DOD_Medio_Perc=round(float(avg_dod), 4),
-        C_Rate_Max=round(float(max_c_rate), 2), 
-        C_Rate_Medio=round(float(avg_c_rate), 3),
-        SOC_Medio=round(float(media_soc), 4),
-        SOC_Medio_Idle=round(float(soc_idle_avg) if not np.isnan(soc_idle_avg) else 0.0, 4),
-        Tempo_SOC_Alto_Perc=round(float(pct_alto), 1),
-        Tempo_SOC_Baixo_Perc=round(float(pct_baixo), 1),
-        Energia_Carga_kWh=round(float(energia_carga_kwh), 2),
-        Energia_Descarga_kWh=round(float(energia_descarga_kwh), 2),
+        Ciclos_Contagem=len(ciclos_rf),
+        EFC_Ciclos_Equivalentes=round(efc, 2),
+        DOD_Medio_Perc=round(avg_dod, 4),
+        C_Rate_Max=round(max_c, 2), 
+        C_Rate_Medio=round(avg_c, 3),
+        SOC_Medio=round(media_soc, 4),
+        SOC_Medio_Idle=round(soc_idle_avg, 4),
+        Tempo_SOC_Alto_Perc=round(pct_alto, 1),
+        Tempo_SOC_Baixo_Perc=round(pct_baixo, 1),
+        Energia_Carga_kWh=round(e_carga, 2),
+        Energia_Descarga_kWh=round(e_descarga, 2),
         Rainflow_Cycles=ciclos_rf 
     )

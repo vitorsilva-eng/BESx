@@ -59,9 +59,9 @@ Plecs {
   ScriptsDialogGeometry "[743 385 466 244]"
   ScriptsDialogSplitterPos "96"
   Schematic {
-    Location      [222, 1129; 1660, 2086]
-    ZoomFactor    1.96257
-    SliderPosition [59, -1]
+    Location      [0, 23; 1920, 989]
+    ZoomFactor    1.49863
+    SliderPosition [-1, -1]
     ShowBrowser   off
     BrowserWidth  158
     Component {
@@ -1714,20 +1714,20 @@ Plecs {
       Type          Scope
       Name          "Scope2"
       Show          on
-      Position      [250, 410]
+      Position      [450, 410]
       Direction     up
       Flipped       off
       LabelPosition south
-      Location      [954, 1111; 1919, 2138]
-      State         "AAAA/wAAAAD9AAAAAgAAAAEAAAC0AAADaPwCAAAAA/sAAAAQAFoAbwBvA"
-"G0AQQByAGUAYQAAAAA0AAADvQAAANEA////+wAAABQAUwBhAHYAZQBkAFYAaQBlAHcAcwAAAAAA//"
-"///wAAAGMA////+wAAAAwAVAByAGEAYwBlAHMAAAAANAAAA2gAAABjAP///wAAAAMAAAPFAAAAf/w"
-"BAAAAAfsAAAAUAEQAYQB0AGEAVwBpAGQAZwBlAHQBAAAAAAAAA8UAAABEAP///wAAA8UAAANfAAAA"
+      Location      [961, 1111; 1919, 2138]
+      State         "AAAA/wAAAAD9AAAAAgAAAAEAAAC0AAADX/wCAAAAA/sAAAAQAFoAbwBvA"
+"G0AQQByAGUAYQAAAAA0AAADvQAAANEA////+wAAABQAUwBhAHYAZQBkAFYAaQBlAHcAcwEAAAA0AA"
+"ADXwAAAGMA////+wAAAAwAVAByAGEAYwBlAHMAAAAANAAAA2gAAABjAP///wAAAAMAAAO+AAAAf/w"
+"BAAAAAfsAAAAUAEQAYQB0AGEAVwBpAGQAZwBlAHQBAAAAAAAAA74AAABEAP///wAAAwQAAANfAAAA"
 "BAAAAAQAAAAIAAAACPwAAAABAAAAAgAAAAEAAAAOAFQAbwBvAGwAQgBhAHIBAAAAAP////8AAAAAA"
 "AAAAA=="
       SavedViews    "AAAAAgAAAAA="
-      HeaderState   "{\"DefaultSecSize\":0,\"FirstSecSize\":129,\"Labels\":[\""
-"Delta\"],\"VisualIdxs\":[3]}"
+      HeaderState   "{\"DefaultSecSize\":100,\"FirstSecSize\":129,\"Labels\":["
+"\"Delta\"],\"VisualIdxs\":[3]}"
       PlotPalettes  "AAAAAQAAAAEAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAA"
 "AEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 "AAAAEAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -1736,7 +1736,7 @@ Plecs {
       TimeRange     "0"
       ScrollingMode "1"
       SingleTimeAxis "1"
-      Open          "0"
+      Open          "1"
       Ts            "-1"
       SampleLimit   "0"
       XAxisLabel    "Time / s"
@@ -1768,7 +1768,7 @@ Plecs {
         AutoScale     1
         MinValue      0
         MaxValue      1
-        Signals       {"State"}
+        Signals       {"V_bat"}
         SignalTypes   [ ]
         Untangle      0
         KeepBaseline  off
@@ -1827,7 +1827,7 @@ Plecs {
           AutoScale     1
           MinValue      0
           MaxValue      1
-          Signals       {"State"}
+          Signals       {"V_bat"}
           Untangle      0
           KeepBaseline  off
           BaselineValue 0
@@ -1962,7 +1962,7 @@ Plecs {
       }
       Parameter {
         Variable      "SampleTime"
-        Value         "300"
+        Value         "60"
         Show          off
       }
     }
@@ -3639,13 +3639,6 @@ Plecs {
     }
     Connection {
       Type          Signal
-      SrcComponent  "From12"
-      SrcTerminal   1
-      DstComponent  "Mux2"
-      DstTerminal   2
-    }
-    Connection {
-      Type          Signal
       SrcComponent  "From7"
       SrcTerminal   1
       Points        [205, 490]
@@ -3661,21 +3654,6 @@ Plecs {
     }
     Connection {
       Type          Signal
-      SrcComponent  "From10"
-      SrcTerminal   1
-      Points        [200, 480]
-      Branch {
-        Points        [200, 410]
-        DstComponent  "Scope2"
-        DstTerminal   3
-      }
-      Branch {
-        DstComponent  "Mux2"
-        DstTerminal   4
-      }
-    }
-    Connection {
-      Type          Signal
       SrcComponent  "From8"
       SrcTerminal   1
       Points        [195, 470]
@@ -3686,6 +3664,28 @@ Plecs {
       }
       Branch {
         DstComponent  "Mux2"
+        DstTerminal   3
+      }
+    }
+    Connection {
+      Type          Signal
+      SrcComponent  "From10"
+      SrcTerminal   1
+      DstComponent  "Mux2"
+      DstTerminal   4
+    }
+    Connection {
+      Type          Signal
+      SrcComponent  "From12"
+      SrcTerminal   1
+      Points        [360, 460]
+      Branch {
+        DstComponent  "Mux2"
+        DstTerminal   2
+      }
+      Branch {
+        Points        [360, 410]
+        DstComponent  "Scope2"
         DstTerminal   3
       }
     }

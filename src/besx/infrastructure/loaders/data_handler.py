@@ -5,7 +5,7 @@ Responsabilidade: Tudo relacionado à manipulação dos dados de entrada.
 Sabe como ler o arquivo .mat, convertê-lo para um DataFrame e fatiá-lo
 em pedaços mensais.
 """
-from besx.infrastructure.loaders.conversor import converter_csv_para_mat
+from besx.infrastructure.loaders.conversor import converter_csv_para_pkl
 import pandas as pd
 from scipy.io import loadmat
 from scipy.signal import find_peaks
@@ -155,19 +155,28 @@ def identificar_tipo_arquivo(nome_arquivo_selecionado: str) -> Optional[str]:
         CONFIGURACAO.dados_entrada.ARQUIVO_MAT = nome_arquivo_selecionado
         return nome_arquivo_selecionado
 
+    elif extensao == '.pkl':
+        logger.info(f"-> Arquivo Pickle detectado: {nome_arquivo_selecionado}")
+        # Usamos o campo ARQUIVO_MAT para armazenar o arquivo final a ser lido, independente do tipo
+        CONFIGURACAO.dados_entrada.ARQUIVO_MAT = nome_arquivo_selecionado
+        return nome_arquivo_selecionado
+
     elif extensao == '.csv':
-        logger.info(f"-> Arquivo CSV detectado. Convertendo '{nome_arquivo_selecionado}'...")
+        logger.info(f"-> Arquivo CSV detectado. Convertendo '{nome_arquivo_selecionado}' para Pickle...")
         
-        # Chama o conversor
-        converter_csv_para_mat(caminho_origem, caminho_destino, "ATot")
+        # O destino agora é .pkl para máxima performance
+        nome_arquivo_pkl = f"{nome_base}.pkl"
+        caminho_destino_pkl = os.path.join(PATH_DATABASE, nome_arquivo_pkl)
+
+        # Chama o novo conversor Pickle
+        from besx.infrastructure.loaders.conversor import converter_csv_para_pkl
+        converter_csv_para_pkl(caminho_origem, caminho_destino_pkl)
         
-        logger.info(f"-> Conversão concluída. Novo arquivo gerado: {nome_arquivo_mat}")
+        logger.info(f"-> Conversão concluída. Novo arquivo gerado: {nome_arquivo_pkl}")
         
-        # Atualiza config para usar o MAT, não o CSV
-        CONFIGURACAO.dados_entrada.ARQUIVO_MAT = nome_arquivo_mat
-        
-        # IMPORTANTE: Retorna o nome do arquivo MAT, não o CSV
-        return nome_arquivo_mat
+        # Atualiza config para usar o PKL
+        CONFIGURACAO.dados_entrada.ARQUIVO_MAT = nome_arquivo_pkl # Campo reaproveitado
+        return nome_arquivo_pkl
 
     else:
         logger.error(f"Erro: Extensão '{extensao}' não suportada.")
@@ -177,9 +186,25 @@ def identificar_tipo_arquivo(nome_arquivo_selecionado: str) -> Optional[str]:
 #3 Execução
 def carregar_dados_mat(filename: str) -> Optional[pd.DataFrame]:
     """
-    (Função interna) Carrega um arquivo .mat e o converte para um DataFrame.
+    (Função interna) Carrega um arquivo (.mat ou .pkl) e o converte para um DataFrame.
     """
-    
+    if filename.endswith('.pkl'):
+        try:
+            df = pd.read_pickle(filename)
+            # Padroniza nomes de colunas caso venha do Step 1 (Injeção)
+            # O motor espera ('Tempo', 'Potencia_kW')
+            if 'Potencia_W' in df.columns:
+                df['Potencia_kW'] = df['Potencia_W'] / 1000.0
+                df = df[['Tempo', 'Potencia_kW']]
+            elif 'Potencia' in df.columns:
+                df = df.rename(columns={'Potencia': 'Potencia_kW'})
+                
+            logger.info(f"Arquivo Pickle '{filename}' carregado com sucesso.")
+            return df
+        except Exception as e:
+            logger.error(f"Erro ao carregar arquivo Pickle '{filename}': {e}")
+            return None
+            
     try:
         dados_mat = loadmat(filename)
         # Filtra chaves que não começam com __ (metadados do MAT)
@@ -192,10 +217,10 @@ def carregar_dados_mat(filename: str) -> Optional[pd.DataFrame]:
         nome_variavel = variaveis[0]
         matriz_dados = dados_mat[nome_variavel]
         df_total = pd.DataFrame(matriz_dados.T, columns=['Tempo', 'Potencia_kW'])     
-        logger.info(f"Arquivo '{filename}' carregado. Total de {len(df_total)} linhas.")
+        logger.info(f"Arquivo MAT '{filename}' carregado. Total de {len(df_total)} linhas.")
         return df_total
     except Exception as e:
-        logger.error(f"Erro ao carregar ou converter '{filename}': {e}")
+        logger.error(f"Erro ao carregar ou converter MAT '{filename}': {e}")
         return None
 
 def analisar_integridade_dados(df: pd.DataFrame) -> Optional[float]:

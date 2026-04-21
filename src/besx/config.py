@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 # ============================================================
 #  ▶  ALTERE AQUI PARA TROCAR O MODELO DE BATERIA  ◀
 # ============================================================
-PERFIL_ATIVO = "LiFePO4_78Ah"
+PERFIL_ATIVO = "Sany_314Ah_Validation"
 # ============================================================
 
 # --- Classes de Configuração (Pydantic) ---
@@ -17,7 +17,6 @@ class PlecsConfig(BaseModel):
     BLOCO_SOH_ALIAS: str = "SOH_Input"
     ARQUIVO_ENTRADA_POT: str = "potencia_mes_in.mat"
     ARQUIVO_SAIDA_SOC: str = "soc_out_mes.csv"
-    Nfases: int = 3
 
 class DadosEntradaConfig(BaseModel):
     """Configurações gerais dos dados de telemetria de entrada e formatação de tempo."""
@@ -33,10 +32,14 @@ class SimulacaoConfig(BaseModel):
     ANOS_SIMULACAO: int = 1
     MESES_SIMULACAO: Optional[int] = None
     data_inicio_simulacao: str = '2025-01-01 00:00:00'
+    SOC_ALTO_LIMITE: float = 0.9
+    SOC_BAIXO_LIMITE: float = 0.1
+    n_unidades: int = 1
 
 class BateriaConfig(BaseModel):
     """Parâmetros físicos, nominais e termodinâmicos para o modelo da bateria."""
     model_config = {"populate_by_name": True}
+    quimica: str = "LFP"
     capacidade_nominal_wh: float
     capacidade_limite_perda_perc: float = 20.0
     Tbat_kelvin: float = 298.15
@@ -93,7 +96,6 @@ class PathsConfig(BaseModel):
 class RelatorioConfig(BaseModel):
     """Configurações referentes ao nível de detalhamento dos relatórios gerados."""
     gerar_validacao_detalhada: bool = True
-    incluir_calculos_intermediarios: bool = True
 
 class LLMConfig(BaseModel):
     """Configurações de integração com modelos de linguagem (Gemini)."""

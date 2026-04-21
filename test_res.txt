@@ -1,7 +1,0 @@
-{'rainflow_dod': {'msg': 'Microciclos isolados com ~20% DOD', 'pass': True},
- 'stroe_nonlinear': {'msg': 'Acumulação de Capacity Fade é corretamente '
-                            'quadrática',
-                     'pass': True},
- 'tc1_1c_swing': {'msg': 'SOC Máximo esperado 1.0 (100%), obtido 0.9151 '
-                         '(91.51%)',
-                  'pass': False}}
