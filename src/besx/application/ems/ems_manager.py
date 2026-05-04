@@ -64,6 +64,23 @@ class PeakShavingStrategy(BaseStrategy):
         )
         return df_out
 
+class PowerFactorCorrectionStrategy(BaseStrategy):
+    """Wrapper for the Power Factor Correction algorithm."""
+    
+    def execute(self, df_carga: pd.DataFrame, bess_ems: BessEMS, **kwargs) -> pd.DataFrame:
+        col_tempo = kwargs.get('time_col', 'Time')
+        pf_target = kwargs.get('pf_target', 1.0)
+        s_max_va = kwargs.get('s_max_va', 1e9) # Default to huge capacity if not provided, though it should be
+        
+        df_out = bess_ems.gerar_perfil_power_factor_correction(
+            df_carga=df_carga,
+            pf_target=pf_target,
+            s_max_va=s_max_va,
+            coluna_tempo=col_tempo
+        )
+        return df_out
+
+
 
 class EMSManager:
     """
@@ -198,12 +215,21 @@ class EMSManager:
 
         # Step 2: Sequential Execution of Strategies
         for strategy in self.strategies:
+            # Merge self.s_inversor_va into kwargs for strategy execution
+            current_kwargs = kwargs.copy()
+            if 's_max_va' not in current_kwargs:
+                current_kwargs['s_max_va'] = self.s_inversor_va
+                
             # Execute the strategy and get ONLY the battery power result
-            df_out = strategy.execute(df_processed, self.bess_ems, time_col=time_col, load_col='Carga_W', **kwargs)
+            df_out = strategy.execute(df_processed, self.bess_ems, time_col=time_col, load_col='Carga_W', **current_kwargs)
             
             # Merge the result back into the main processed dataframe
             if 'Potencia_Bateria_W' in df_out.columns:
                 df_processed['Potencia_Bateria_W'] = df_out['Potencia_Bateria_W'].values
+                
+            # Merge reactive power dispatch if present
+            if 'Potencia_Reativa_Bateria_VAr' in df_out.columns:
+                df_processed['Potencia_Reativa_Bateria_VAr'] = df_out['Potencia_Reativa_Bateria_VAr'].values
 
         # Step 3: Heuristic SOC integration (REQ-11)
         if 'Potencia_Bateria_W' not in df_processed.columns:

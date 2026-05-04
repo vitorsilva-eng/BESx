@@ -132,3 +132,45 @@ class BessEMS:
         
         logger.info("Cálculo de Peak Shaving finalizado.")
         return df_out
+
+    def gerar_perfil_power_factor_correction(
+        self,
+        df_carga: pd.DataFrame,
+        pf_target: float,
+        s_max_va: float,
+        coluna_tempo: str = 'Time'
+    ) -> pd.DataFrame:
+        """
+        Aplica a correção do fator de potência de forma vetorizada, despachando potência reativa (VAr).
+        Respeita a capacidade geométrica do inversor S_max.
+        """
+        logger.info(f"Iniciando correção de fator de potência. PF={pf_target}, S_max={s_max_va}VA (Vetorizado).")
+        
+        # Potência Ativa Total da Rede (Carga da instalação + Bateria)
+        p_bess = df_carga.get('Potencia_Bateria_W', pd.Series(0.0, index=df_carga.index)).values
+        p_carga = df_carga['Carga_W'].values
+        p_rede = p_carga + p_bess
+        
+        q_carga = df_carga.get('Carga_VAr', pd.Series(0.0, index=df_carga.index)).values
+        
+        # 1. Calcular Q_alvo
+        pf_safe = np.clip(pf_target, -1.0, 1.0)
+        tan_phi = np.tan(np.arccos(np.abs(pf_safe)))
+        q_alvo = np.sign(q_carga) * np.abs(p_rede) * tan_phi
+        
+        # 2. Q necessário
+        q_req = q_alvo - q_carga
+        
+        # 3. Sobra do inversor (S_max^2 - P_bess^2)
+        q_disp = np.sqrt(np.clip(s_max_va**2 - p_bess**2, 0, None))
+        
+        # 4. Clip limits
+        q_bess = np.clip(q_req, -q_disp, q_disp)
+        
+        df_out = pd.DataFrame({
+            coluna_tempo: df_carga[coluna_tempo] if coluna_tempo in df_carga.columns else df_carga.index,
+            'Potencia_Reativa_Bateria_VAr': q_bess
+        })
+        
+        logger.info("Cálculo de correção de fator de potência finalizado.")
+        return df_out
