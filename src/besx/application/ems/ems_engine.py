@@ -146,10 +146,9 @@ class BessEMS:
         """
         logger.info(f"Iniciando correção de fator de potência. PF={pf_target}, S_max={s_max_va}VA (Vetorizado).")
         
-        # Potência Ativa Total da Rede (Carga da instalação + Bateria)
-        p_bess = df_carga.get('Potencia_Bateria_W', pd.Series(0.0, index=df_carga.index)).values
-        p_carga = df_carga['Carga_W'].values
-        p_rede = p_carga + p_bess
+        # Potência Ativa Total da Rede (Carga da instalação)
+        # Como o PFC roda de forma isolada nesta etapa, a rede enxerga apenas a carga ativa
+        p_rede = df_carga['Carga_W'].values
         
         q_carga = df_carga.get('Carga_VAr', pd.Series(0.0, index=df_carga.index)).values
         
@@ -161,8 +160,9 @@ class BessEMS:
         # 2. Q necessário
         q_req = q_alvo - q_carga
         
-        # 3. Sobra do inversor (S_max^2 - P_bess^2)
-        q_disp = np.sqrt(np.clip(s_max_va**2 - p_bess**2, 0, None))
+        # 3. Sobra do inversor (S_max)
+        # Como não há despacho de potência ativa, toda a capacidade do inversor (VA) está disponível para reativos
+        q_disp = s_max_va
         
         # 4. Clip limits
         q_bess = np.clip(q_req, -q_disp, q_disp)
