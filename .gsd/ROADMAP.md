@@ -45,8 +45,11 @@
 **Objective**: Implement power factor correction reactive dispatch in the EMS engine.
 
 ### Phase 8: PFC UI Integration
-**Status**: ⬜ Not Started
-**Objective**: Integrate Power Factor Correction configuration (Target PF) and visualization (Reactive Power Dispatch) into the Streamlit Dashboard.
+**Status**: ✅ Complete
+**Goal**: Integrate PFC configuration and visual reporting into the dashboard.
+- [x] Input de `pf_target` e `s_max_va` no Passo 1.
+- [x] Injeção dinâmica no `EMSManager` via kwargs.
+- [x] Gráficos de VAr e FP no Dashboard.
 **Depends on**: Phase 7
 
 **Tasks**:
