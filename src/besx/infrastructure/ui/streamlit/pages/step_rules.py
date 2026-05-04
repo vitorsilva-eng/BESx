@@ -280,7 +280,7 @@ def render_step_rules():
             # Gráfico de Despacho (Original da tela)
             s_used = st.session_state.get('ems_strategy_used', "Load Shifting")
             limite_exibicao_w = (p_used.get('limite_demanda_kw', 0) if s_used == "Load Shifting" else p_used.get('peak_limit_kw', 0)) * 1000.0
-            st.plotly_chart(plot_ems_dispatch_comparison(df_res, time_col, limite_w=limite_exibicao_w), width='stretch')
+            st.plotly_chart(plot_ems_dispatch_comparison(df_res, time_col, limite_w=limite_exibicao_w), width='stretch', key="chart_dispatch_main")
 
         with t2:
             c1, c2 = st.columns([1, 1])
@@ -288,18 +288,18 @@ def render_step_rules():
                 st.metric("Energia Total", f"{metrics.total_energy_kwh:,.0f} kWh")
                 st.metric("Consumo Médio Diário", f"{metrics.avg_daily_energy_kwh:.1f} kWh/dia")
                 st.metric("Projeção Mensal (30d)", f"{metrics.est_monthly_energy_kwh:,.0f} kWh")
-                st.plotly_chart(plot_peak_analysis(metrics.energy_ponta_kwh, metrics.energy_fora_ponta_kwh), width='stretch')
+                st.plotly_chart(plot_peak_analysis(metrics.energy_ponta_kwh, metrics.energy_fora_ponta_kwh), width='stretch', key="chart_peak_analysis")
             with c2:
                 st.metric("Pico na Ponta", f"{metrics.p_max_ponta_w/1000:.1f} kW")
                 st.metric("Participação na Ponta", f"{metrics.pct_energy_ponta:.1%}")
                 st.info(f"Horário de Ponta considerado: {h_ini:02d}h às {h_fim:02d}h (Exceto Fins de Semana e Feriados).")
-                st.plotly_chart(plot_load_frequency_histogram(df_res, load_col), width='stretch')
+                st.plotly_chart(plot_load_frequency_histogram(df_res, load_col), width='stretch', key="chart_load_hist")
 
         with t3:
-            st.plotly_chart(plot_load_heatmap(df_res, time_col, load_col), width='stretch')
+            st.plotly_chart(plot_load_heatmap(df_res, time_col, load_col), width='stretch', key="chart_load_heatmap")
             st.caption("O mapa de calor acima mostra a média de consumo para cada hora do dia agrupada por dia da semana.")
 
-            st.plotly_chart(plot_energy_balance(df_res, time_col), width='stretch')
+            st.plotly_chart(plot_energy_balance(df_res, time_col), width='stretch', key="chart_energy_balance_t3")
 
         with t4:
             st.subheader("⚡ Qualidade de Energia e Reativos")
@@ -320,8 +320,8 @@ def render_step_rules():
             
             target_pf = p_used.get('pf_target', 0.98) if s_used == "Power Factor Correction" else None
             
-            st.plotly_chart(plot_power_factor_comparison(df_res, time_col, pf_target=target_pf), width='stretch')
-            st.plotly_chart(plot_reactive_power_comparison(df_res, time_col), width='stretch')
+            st.plotly_chart(plot_power_factor_comparison(df_res, time_col, pf_target=target_pf), width='stretch', key="chart_pfc_comparison")
+            st.plotly_chart(plot_reactive_power_comparison(df_res, time_col), width='stretch', key="chart_reactive_power")
 
         with t5:
             q1, q2, q3 = st.columns(3)
@@ -332,7 +332,7 @@ def render_step_rules():
             if metrics.dt_min > 60:
                 st.warning("⚠️ Resolução baixa detectada (>60 min). Os cálculos de picos podem estar subestimados.")
             
-            st.plotly_chart(plot_energy_balance(df_res, time_col), width='stretch')
+            st.plotly_chart(plot_energy_balance(df_res, time_col), width='stretch', key="chart_energy_balance_t5")
 
         st.markdown("---")
         
