@@ -9,6 +9,7 @@ def render_step_rules():
     Passo 1: Definição das Regras do Local e Estratégia EMS.
     """
     import pandas as pd
+    import numpy as np
     import holidays
     from besx.application.ems.ems_manager import EMSManager, LoadShiftingStrategy, PeakShavingStrategy, PowerFactorCorrectionStrategy
     from besx.application.analysis.load_analyzer import LoadAnalyzer
