@@ -1,6 +1,6 @@
 ## Current Position
-- **Phase**: 7 (completed)
-- **Task**: Power Factor Correction Integration
+- **Phase**: 8 (planned)
+- **Task**: PFC UI Integration
 - **Status**: Stable
 
 ## Summary of Accomplishments
@@ -9,5 +9,5 @@
 3. **Power Factor Correction (Phase 7)**: Implemented EMS capability to infer power triangle and dispatch reactive power within S_max limit.
 
 ## Next Steps
-1. Integrar PowerFactorCorrectionStrategy na interface de visualização do EMS (Dashboard).
+1. /plan 8 - Criar o plano de execução para integrar o PFC no Dashboard Streamlit.
 2. Investigar modelos térmicos para baterias.
