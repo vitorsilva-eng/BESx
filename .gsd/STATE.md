@@ -1,11 +1,13 @@
 ## Current Position
-- **Phase**: 3 (completed)
-- **Milestone**: v1.0 EMS Integration (completed)
-- **Status**: Verified
+- **Phase**: 7 (completed)
+- **Task**: Power Factor Correction Integration
+- **Status**: Stable
 
 ## Summary of Accomplishments
-Implemented a complete EMS Manager for BESx, from strict validation to strategy preview and simulation integration. The system is now robust and academic-ready for isolated strategy validation.
+1. **Performance Optimization (Phase 5)**: Achieved 57.5 months/s using Numba JIT. Parity verified.
+2. **UI Restoration (Phase 6)**: Fixed layout collapse and frozen widgets by upgrading Streamlit to 1.54.0 and refactoring global CSS selectors to be sidebar-specific.
+3. **Power Factor Correction (Phase 7)**: Implemented EMS capability to infer power triangle and dispatch reactive power within S_max limit.
 
 ## Next Steps
-- User to perform end-to-end mission profile simulations for the paper.
-- Plan V2 for multi-strategy stacking and dynamic arbitrage.
+1. Integrar PowerFactorCorrectionStrategy na interface de visualização do EMS (Dashboard).
+2. Investigar modelos térmicos para baterias.
