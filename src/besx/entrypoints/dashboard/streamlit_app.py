@@ -1,5 +1,4 @@
 import streamlit as st
-import pandas as pd
 import os
 import sys
 
@@ -10,12 +9,6 @@ if src_path not in sys.path:
 
 # --- Internal Imports ---
 from besx.config import CONFIGURACAO
-from besx.infrastructure.ui.streamlit.pages.step_rules import render_step_rules
-from besx.infrastructure.ui.streamlit.pages.step_battery import render_step_battery
-from besx.infrastructure.ui.streamlit.pages.step_simulation import render_step_simulation
-from besx.infrastructure.ui.streamlit.pages.step_results import render_step_results
-from besx.infrastructure.ui.streamlit.pages.step_comparison import render_step_comparison
-from besx.infrastructure.ui.streamlit.pages.step_settings import render_step_settings
 
 # --- Page Setup ---
 st.set_page_config(
@@ -33,6 +26,8 @@ st.markdown("""
     .stMetric { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 15px; }
     
     /* Sidebar Step Cards Styling */
+    [data-testid="stSidebarCaptionedLabel"] { font-size: 14px; color: rgba(255,255,255,0.6); }
+
     [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(div.stButton) {
         margin-bottom: -10px;
     }
@@ -59,18 +54,19 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(0, 255, 204, 0.1);
     }
 
-    /* Active State Class (Simulated via Label Prefix in Logic) */
-    .active-card {
-        border-color: #00ffcc !important;
-        background: rgba(0, 255, 204, 0.1) !important;
-        box-shadow: 0 0 20px rgba(0, 255, 204, 0.2) !important;
+    /* Fix Column Layout for modern Streamlit versions */
+    [data-testid="column"] {
+        min-width: 0px !important;
     }
+
 </style>
 """, unsafe_allow_html=True)
 
 # --- Session State Initialization ---
 if 'nav_step' not in st.session_state: st.session_state.nav_step = "📋 1. Regras do Local"
-if 'sim_results' not in st.session_state: st.session_state.sim_results = pd.DataFrame()
+if 'sim_results' not in st.session_state:
+    import pandas as pd
+    st.session_state.sim_results = pd.DataFrame()
 if 'sim_status' not in st.session_state: st.session_state.sim_status = "idle"
 if 'config_override' not in st.session_state: st.session_state.config_override = CONFIGURACAO.modelo_degradacao.model_dump()
 if 'ems_injected' not in st.session_state: st.session_state.ems_injected = False
@@ -141,16 +137,22 @@ st.sidebar.markdown("---")
 selected_step = st.session_state.nav_step
 
 if "1. Regras" in selected_step:
+    from besx.infrastructure.ui.streamlit.pages.step_rules import render_step_rules
     render_step_rules()
 elif "2. Escolha" in selected_step:
+    from besx.infrastructure.ui.streamlit.pages.step_battery import render_step_battery
     render_step_battery()
 elif "3. Simulação" in selected_step:
+    from besx.infrastructure.ui.streamlit.pages.step_simulation import render_step_simulation
     render_step_simulation()
 elif "4. Resultados" in selected_step:
+    from besx.infrastructure.ui.streamlit.pages.step_results import render_step_results
     render_step_results()
 elif "5. Comparativo" in selected_step:
+    from besx.infrastructure.ui.streamlit.pages.step_comparison import render_step_comparison
     render_step_comparison()
 elif "6. Configurações" in selected_step:
+    from besx.infrastructure.ui.streamlit.pages.step_settings import render_step_settings
     render_step_settings()
 
 # --- Footer ---

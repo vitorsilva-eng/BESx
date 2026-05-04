@@ -10,13 +10,8 @@ from typing import List, Any, Dict
 
 # Imports internos
 from besx.infrastructure.files.file_manager import FileManager
-from besx.infrastructure.loaders.data_handler import data_handle
-from besx.infrastructure.plecs.plecs_connector import run_monthly_simulation, close_plecs_server, extrair_soc_final
 from besx.domain.models.degradation_engine import DegradationEngine, DamageResult
-from besx.infrastructure.visualization.plots import plotar_capacidade_mensal, plotar_composicao_degradacao
-from besx.infrastructure.reports.report import gerar_relatorio_txt
 from besx.infrastructure.logging.logger import logger
-from besx.infrastructure.reports.validation_report import gerar_relatorio_validacao, exportar_debug_degradacao, export_xlsx
 
 class ResultadoMes(BaseModel):
     """Modelo Pydantic para estruturar e validar os resultados de um mês de simulação."""
@@ -155,6 +150,7 @@ class SimulationManager:
             meses_alvo = self.config.simulacao.ANOS_SIMULACAO * 12
         
         # Passamos o data_file se fornecido, senão ele pede via console no data_handle()
+        from besx.infrastructure.loaders.data_handler import data_handle
         df_perfil_bess = data_handle(nome_arquivo=self.data_file, meses_alvo=meses_alvo)
         
         if not df_perfil_bess:
@@ -173,7 +169,8 @@ class SimulationManager:
                     continue  # Pula os meses já processados no checkpoint
                     
                 self._processar_mes(df_mes, mes_id, total_meses)
-                self._salvar_checkpoint()
+                # Checkpoint desativado para ganho de performance de I/O
+                # self._salvar_checkpoint()
                 
                 # Checagem de fim de vida (sempre ativa)
                 if self.soh_atual * 100 <= 100 - self.cfg_bat.capacidade_limite_perda_perc:
@@ -181,6 +178,7 @@ class SimulationManager:
                     break
         finally:
             if self.backend == "plecs":
+                from besx.infrastructure.plecs.plecs_connector import close_plecs_server
                 close_plecs_server()
 
         # --- ETAPA 3: RESULTADOS FINAIS ---
@@ -191,6 +189,7 @@ class SimulationManager:
         Processa um mês individual de simulação: cálculos elétricos, degradação e agregação.
         """
         # 1. Simulação da bateria (backend escolhido no menu)
+        from besx.infrastructure.plecs.plecs_connector import run_monthly_simulation, extrair_soc_final
         perfil_soc_mes = run_monthly_simulation(
             df_mes, 
             self.soh_atual, 
@@ -219,6 +218,7 @@ class SimulationManager:
         
         # --- ETAPA DE INFRAESTRUTURA: Exportação de Debug ---
         if self.config.relatorio.gerar_validacao_detalhada:
+            from besx.infrastructure.reports.validation_report import exportar_debug_degradacao
             exportar_debug_degradacao(perfil_soc_mes, "perfil_soc_mes", mes_id, pasta_debug=caminho_debug)
             exportar_debug_degradacao(damage.perfil_simp, "picos_e_vales", mes_id, pasta_debug=caminho_debug)
             exportar_debug_degradacao(perfil_soc_mes['SOC'].round(1).tolist(), "soc_usado_idle", mes_id, pasta_debug=caminho_debug)
@@ -298,10 +298,12 @@ class SimulationManager:
             snap['bateria_soc_min'] = self.config.bateria.soc_min
             snap['bateria_soc_max'] = self.config.bateria.soc_max
             snap['backend'] = self.backend
+            snap['n_unidades'] = getattr(self.config.simulacao, 'n_unidades', 1)
             snap['sim_until_eol'] = self.sim_until_eol
             snap['total_meses_simulados'] = len(self.resultados_mensais)
             snap['data_file'] = self.data_file
             snap['timestamp'] = self.file_manager.timestamp
+
             # Serializar para JSON com suporte a float
             snap_path = self.file_manager.get_data_path(f"config_snapshot_{prefixo}.json")
             with open(snap_path, 'w', encoding='utf-8') as f:
@@ -311,16 +313,19 @@ class SimulationManager:
             logger.warning(f"Não foi possível salvar config_snapshot.json: {e}")
 
         # Plots
+        from besx.infrastructure.visualization.plots import plotar_capacidade_mensal, plotar_composicao_degradacao
         caminho_plot_cap = self.file_manager.get_plot_path(f"capacidade_restante_mensal_{prefixo}.png")
         plotar_capacidade_mensal(df_resultados_finais, nome_arquivo_saida=caminho_plot_cap)
         
         caminho_plot_comp = self.file_manager.get_plot_path(f"composicao_degradacao_{prefixo}.png")
         plotar_composicao_degradacao(df_resultados_finais, nome_arquivo_saida=caminho_plot_comp)
         
+        from besx.infrastructure.plecs.plecs_connector import close_plecs_server
         close_plecs_server()
         
         # Gerar Relatório de Validação (se habilitado)
         if self.config.relatorio.gerar_validacao_detalhada:
+            from besx.infrastructure.reports.validation_report import gerar_relatorio_validacao
             gerar_relatorio_validacao(
                 self.file_manager, 
                 self.config, 
@@ -333,6 +338,7 @@ class SimulationManager:
         # Calcula a duração
         end_time = datetime.datetime.now()
         duration = end_time - self.start_time
+        from besx.infrastructure.reports.report import gerar_relatorio_txt
         gerar_relatorio_txt(self.file_manager, self.config, df_resultados_finais, str(duration), prefixo=prefixo)
 
     # Método antigo removido em favor do módulo externo

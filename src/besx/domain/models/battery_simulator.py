@@ -1,134 +1,97 @@
 """
-battery_simulator.py  —  Simulador de SOC por Integração de Coulomb
+battery_simulator.py  —  Simulador de SOC por Integração de Coulomb (Otimizado)
 
 Substitui o PLECS na simulação mensal do comportamento da bateria.
 Dado um perfil de potência mensal, calcula o perfil de SOC passo a passo.
 
-Método: Integração de Coulomb
-  SOC(t+dt) = SOC(t) + I(t) * dt / Q_efetivo
-  I(t) = P(t) / V_ocv(SOC(t))
-
-Saída compatível com o CSV que o PLECS produzia:
-  DataFrame com colunas ['Tempo', 'SOC']
-    - Tempo em segundos
-    - SOC em % (0–100)
+Versão com Numba JIT para alta performance.
 """
 
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
+from numba import njit
 
 from besx.config import BateriaConfig
 from besx.infrastructure.logging.logger import logger
 
-def _interpolar_ocv(soc_frac: float, soc_prof: list, ocv_prof: list) -> float:
-    """
-    Interpola a tensão OCV do banco para um dado SOC (fração 0-1).
-
-    Args:
-        soc_frac: SOC atual em fração (0–1)
-        soc_prof: Lista de pontos de SOC da curva OCV (0–1)
-        ocv_prof: Lista de tensões OCV correspondentes (V)
-
-    Returns:
-        Tensão OCV interpolada em Volts
-    """
-    return float(np.interp(soc_frac, soc_prof, ocv_prof))
-
-def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, cfg_bat, n_unidades: int = 1) -> pd.DataFrame:
-    """
-    Simula o perfil de SOC e Tensão de um mês usando integração de Coulomb e Modelo Rint.
-    
-    df_mes: DataFrame contendo ['timestamp_min', 'pot_w'] (Potência CA solicitada)
-    cfg_bat: Objeto/dataclass com (Ns, Np, Ah, Rs, rendimento_pcs, soc_min_pct, soc_max_pct, v_max_celula, v_min_celula, soc_prof, ocv_prof)
-    """
-    # Identificador dinâmico de colunas para suportar diferentes fontes de dados (CSV, MAT)
-    cols = df_mes.columns.tolist()
-    col_t = next((c for c in cols if 'tempo' in c.lower() or 'timestamp' in c.lower()), cols[0])
-    col_p = next((c for c in cols if 'pot' in c.lower() and c != col_t), cols[1] if len(cols)>1 else cols[0])
-
-    # 1. Extração para arrays NumPy (Acelera o loop for em mais de 50x)
-    pot_raw_arr = df_mes[col_p].astype(float).values
-    tempos_min_arr = df_mes[col_t].astype(float).values
-    
-    # 2. Normalização de Unidades (O motor físico espera Watts [W])
-    # Se a coluna for kW, multiplica por 1000. Se for W (do Step 1), usa como está.
-    if 'kw' in col_p.lower():
-        pot_w_arr = pot_raw_arr * 1000.0
-        logger.info(f"[BatterySim] Detectado canal de potência em kW: '{col_p}'. Convertendo para Watts.")
-    else:
-        pot_w_arr = pot_raw_arr
-        logger.info(f"[BatterySim] Detectado canal de potência em Watts: '{col_p}'.")
-
+@njit
+def _simular_coulomb_numba(
+    pot_w_arr: np.ndarray,
+    tempos_min_arr: np.ndarray,
+    soc_inicial: float,
+    Ah: float,
+    soh_atual: float,
+    rs_banco: float,
+    Ns: int,
+    Np: int,
+    n_unidades: int,
+    v_max_banco: float,
+    v_min_banco: float,
+    soc_min_clip: float,
+    soc_max_clip: float,
+    p_bess: float,
+    rendimento_pcs: float,
+    soc_prof: np.ndarray,
+    ocv_prof: np.ndarray,
+    ocv_charge_prof: np.ndarray = None,
+    ocv_discharge_prof: np.ndarray = None
+):
+    """Loop de integração de Coulomb compilado para performance extrema."""
     n_passos = len(pot_w_arr)
-    
-    # 2. Inicialização dos vetores de saída
     soc_out = np.zeros(n_passos)
     corrente_out = np.zeros(n_passos)
     tensao_term_out = np.zeros(n_passos)
     pot_ca_out = np.zeros(n_passos)
     
     soc_out[0] = soc_inicial
-    
-    # Parâmetros do Banco (Escalados por n_unidades)
-    q_efetivo_celula = cfg_bat.Ah * soh_atual
-    # Resistência equivalente do conjunto em paralelo (R_total = R_unit / n_unidades)
-    rs_banco = (cfg_bat.Rs * cfg_bat.Ns) / (cfg_bat.Np * n_unidades) if cfg_bat.Rs else 0.0
-    v_max_banco = cfg_bat.v_max_celula * cfg_bat.Ns
-    v_min_banco = cfg_bat.v_min_celula * cfg_bat.Ns
-    
-    soc_min_clip = cfg_bat.soc_min 
-    soc_max_clip = cfg_bat.soc_max
-    
-    logger.info(f"[BatterySim] Config: Unidades={n_unidades}, Rs_banco={rs_banco:.6f}, SOH={soh_atual:.2f}, SOC=[{soc_min_clip*100:.1f}-{soc_max_clip*100:.1f}]%")
-    
+    q_efetivo_celula = Ah * soh_atual
+    p_bess_limite = p_bess * n_unidades
+
     for k in range(n_passos - 1):
-        
         # Delta T em horas
         dt_h = (tempos_min_arr[k + 1] - tempos_min_arr[k]) / 60.0
         
-        # Potência CA limitada pelo PCS (Escalada por n_unidades)
-        p_bess_limite = (float(cfg_bat.P_bess) * n_unidades)
-        p_ca_w = np.clip(pot_w_arr[k], -p_bess_limite, p_bess_limite)
+        # Potência CA limitada pelo PCS
+        p_ca_w = pot_w_arr[k]
+        if p_ca_w > p_bess_limite:
+            p_ca_w = p_bess_limite
+        elif p_ca_w < -p_bess_limite:
+            p_ca_w = -p_bess_limite
         
-        # Seleção da Curva OCV considerando Histerese (Carga vs Descarga)
-        if p_ca_w >= 0 and getattr(cfg_bat, 'ocv_charge_prof', None) is not None:
-            curva_ocv_ativa = cfg_bat.ocv_charge_prof
-        elif p_ca_w < 0 and getattr(cfg_bat, 'ocv_discharge_prof', None) is not None:
-            curva_ocv_ativa = cfg_bat.ocv_discharge_prof
+        # Seleção da Curva OCV (Histerese)
+        curva_ocv_ativa = ocv_prof
+        if p_ca_w > 0 and ocv_charge_prof is not None:
+            curva_ocv_ativa = ocv_charge_prof
+        elif p_ca_w < 0 and ocv_discharge_prof is not None:
+            curva_ocv_ativa = ocv_discharge_prof
             
-        # Interpolação da Tensão OCV atual
-        v_ocv_celula = _interpolar_ocv(soc_out[k], cfg_bat.soc_prof, curva_ocv_ativa)
-        v_ocv_banco = v_ocv_celula * cfg_bat.Ns
+        # Interpolação OCV
+        v_ocv_celula = np.interp(soc_out[k], soc_prof, curva_ocv_ativa)
+        v_ocv_banco = v_ocv_celula * Ns
         
-        # Potência DC na Bateria (P > 0: Carga | P < 0: Descarga)
+        # Potência DC na Bateria
         if p_ca_w > 0:
-            p_bateria_w = p_ca_w * cfg_bat.rendimento_pcs
+            p_bateria_w = p_ca_w * rendimento_pcs
         elif p_ca_w < 0:
-            p_bateria_w = p_ca_w / cfg_bat.rendimento_pcs
+            p_bateria_w = p_ca_w / rendimento_pcs
         else:
             p_bateria_w = 0.0
             
-        # Cálculo da Corrente
-        # rs_banco^2 * I^2 + V_ocv * I - P_bateria = 0
+        # Cálculo da Corrente (Rint Model)
         if rs_banco > 0.0:
-            # O Valor é positivo pois na equação p_bateria_w é negativo
             delta = v_ocv_banco**2 + 4 * rs_banco * p_bateria_w 
             if delta < 0: 
-                # Delta negativo, então a potência solicitada seria maior que a máxima que a bateria pode fornecer
-                # Para evitar um erro de raiz negativa, usamos a fórmula de Bhaskara com delta = 0, achando o maior valor
                 corrente_banco = -v_ocv_banco / (2 * rs_banco) 
             else:
                 corrente_banco = (-v_ocv_banco + np.sqrt(delta)) / (2 * rs_banco)
-        else: #rs_banco == 0 ou negativa, vira equação simples de 1 grau
+        else:
             corrente_banco = p_bateria_w / v_ocv_banco
             
-        # --- LIMITAÇÃO FÍSICA DE TENSÃO (BMS Cut-off) ---
-        # V_term = V_ocv + I * R_s
+        # BMS Cut-off (Tensão)
         if rs_banco > 1e-7:
             v_term_estimada = v_ocv_banco + (corrente_banco * rs_banco)          
             if v_term_estimada > v_max_banco:
-                # Força a corrente para o máximo que a tensão limite permite
                 corrente_banco = (v_max_banco - v_ocv_banco) / rs_banco
                 v_term_estimada = v_max_banco
             elif v_term_estimada < v_min_banco:
@@ -137,48 +100,87 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
         else:
             v_term_estimada = v_ocv_banco
             
-        # Coulomb Counting Inicial (na célula)
-        # I_celula = I_banco / (Np * n_unidades)
-        corrente_celula = corrente_banco / (cfg_bat.Np * n_unidades)
-        delta_soc_req = (corrente_celula * dt_h / q_efetivo_celula)  # [0-1]
+        # Coulomb Counting
+        corrente_celula = corrente_banco / (Np * n_unidades)
+        delta_soc_req = (corrente_celula * dt_h / q_efetivo_celula) 
         
-        # Atualiza e clipa o SOC
-        soc_novo = np.clip(soc_out[k] + delta_soc_req, soc_min_clip, soc_max_clip)
+        # Clip de SOC
+        soc_novo = soc_out[k] + delta_soc_req
+        if soc_novo > soc_max_clip:
+            soc_novo = soc_max_clip
+        elif soc_novo < soc_min_clip:
+            soc_novo = soc_min_clip
+            
         delta_soc_real = soc_novo - soc_out[k]
 
-        # Se o SOC bateu no limite (bateria cheia ou vazia), a corrente real foi menor
+        # Ajuste de corrente se bateu no limite de SOC
         if abs(delta_soc_real) < abs(delta_soc_req) and abs(delta_soc_req) > 1e-9:
             corrente_celula_real = delta_soc_real * q_efetivo_celula / dt_h
-            corrente_banco = corrente_celula_real * (cfg_bat.Np * n_unidades)
-            
-            # Recalcula a tensão terminal real com a corrente reduzida
+            corrente_banco = corrente_celula_real * (Np * n_unidades)
             if rs_banco > 1e-7:
                  v_term_estimada = v_ocv_banco + (corrente_banco * rs_banco)
             else:
                  v_term_estimada = v_ocv_banco
 
-        # Registra valores reais finais
         corrente_out[k] = corrente_banco
         tensao_term_out[k] = v_term_estimada
         
-        # Potência CA Real Aplicada (após limitações de Tensão/BMS e SOC_max)
-        # P_ca = P_dc / rendimento (se I > 0 / Carga) ou P_ca = P_dc * rendimento (se I < 0 / Descarga)
+        # Potência CA Real
         p_dc_real = v_term_estimada * corrente_banco
         if corrente_banco > 0:
-            pot_ca_out[k] = p_dc_real / cfg_bat.rendimento_pcs
+            pot_ca_out[k] = p_dc_real / rendimento_pcs
         elif corrente_banco < 0:
-            pot_ca_out[k] = p_dc_real * cfg_bat.rendimento_pcs
+            pot_ca_out[k] = p_dc_real * rendimento_pcs
         else:
             pot_ca_out[k] = 0.0
 
         soc_out[k + 1] = soc_novo
         
-    # Salva o último passo de corrente/tensão (mantém o valor anterior para não zerar)
+    # Finalização dos vetores
     corrente_out[-1] = corrente_out[-2]
     tensao_term_out[-1] = tensao_term_out[-2]
     pot_ca_out[-1] = pot_ca_out[-2]
+    
+    return soc_out, corrente_out, tensao_term_out, pot_ca_out
+
+def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, cfg_bat, n_unidades: int = 1) -> pd.DataFrame:
+    """Interface pública para simulação de SOC, delegando o loop para Numba."""
+    cols = df_mes.columns.tolist()
+    col_t = next((c for c in cols if 'tempo' in c.lower() or 'timestamp' in c.lower()), cols[0])
+    col_p = next((c for c in cols if 'pot' in c.lower() and c != col_t), cols[1] if len(cols)>1 else cols[0])
+
+    pot_raw_arr = df_mes[col_p].astype(float).values
+    tempos_min_arr = df_mes[col_t].astype(float).values
+    
+    if 'kw' in col_p.lower():
+        pot_w_arr = pot_raw_arr * 1000.0
+    else:
+        pot_w_arr = pot_raw_arr
+
+    # Parâmetros físicos
+    rs_banco = (cfg_bat.Rs * cfg_bat.Ns) / (cfg_bat.Np * n_unidades) if cfg_bat.Rs else 0.0
+    v_max_banco = cfg_bat.v_max_celula * cfg_bat.Ns
+    v_min_banco = cfg_bat.v_min_celula * cfg_bat.Ns
+    
+    # Conversão de listas/objetos para arrays NumPy (Requisito Numba)
+    soc_prof_np = np.array(cfg_bat.soc_prof, dtype=np.float64)
+    ocv_prof_np = np.array(cfg_bat.ocv_prof, dtype=np.float64)
+    
+    ocv_ch = getattr(cfg_bat, 'ocv_charge_prof', None)
+    ocv_charge_np = np.array(ocv_ch, dtype=np.float64) if ocv_ch is not None else None
+    
+    ocv_dis = getattr(cfg_bat, 'ocv_discharge_prof', None)
+    ocv_discharge_np = np.array(ocv_dis, dtype=np.float64) if ocv_dis is not None else None
+
+    # Chamada do Motor Compilado
+    soc_out, corrente_out, tensao_term_out, pot_ca_out = _simular_coulomb_numba(
+        pot_w_arr, tempos_min_arr, soc_inicial, cfg_bat.Ah, soh_atual,
+        rs_banco, cfg_bat.Ns, cfg_bat.Np, n_unidades,
+        v_max_banco, v_min_banco, cfg_bat.soc_min, cfg_bat.soc_max,
+        float(cfg_bat.P_bess), cfg_bat.rendimento_pcs,
+        soc_prof_np, ocv_prof_np, ocv_charge_np, ocv_discharge_np
+    )
         
-    # 3. Reconstrói o DataFrame de Saída para a Análise de Degradação
     df_resultado = pd.DataFrame({
         'Tempo': tempos_min_arr * 60.0,
         'SOC': soc_out,
@@ -189,231 +191,48 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
     
     return df_resultado
 
-def old_simular_soc_mes(
-    df_mes: pd.DataFrame,
-    soh_atual: float,
-    soc_inicial: float,
-    cfg_bat: BateriaConfig,
-) -> pd.DataFrame:
-    """
-    Simula o perfil de SOC de um mês usando integração de Coulomb.
-
-    Reproduz o comportamento do modelo de bateria do PLECS:
-    - Limita a potência a ±P_bess
-    - Limita o SOC ao intervalo [SOCmin, SOCmax]
-    - Usa a curva OCV×SOC para estimar a tensão instantânea
-    - Aplica carga limitada quando os limites de SOC são atingidos
-
-    Args:
-        df_mes (pd.DataFrame):
-            Perfil de potência do mês.
-            Colunas esperadas: [Tempo (min), Potencia_kW]
-        soh_atual (float):
-            State of Health atual — fração 0–1. Escala a capacidade.
-        soc_inicial (float):
-            SOC inicial do mês — fração 0–1.
-        cfg_bat (BateriaConfig):
-            Configuração da bateria (atributo CONFIGURACAO.bateria).
-            Campos usados:
-              - 'Ah'      : Capacidade nominal do módulo (Ah)
-              - 'Ns'      : Número de módulos em série
-              - 'Np'      : Número de strings em paralelo
-              - 'soc_prof': Lista SOC fracionário para curva OCV
-              - 'ocv_prof': Lista de tensões OCV (V)
-              - 'soc_min' : SOC mínimo (fração 0–1)
-              - 'soc_max' : SOC máximo (fração 0–1)
-              - 'P_bess'  : Potência máxima do BESS (W)
-
-    Returns:
-        pd.DataFrame:
-            DataFrame com colunas ['Tempo', 'SOC']:
-              - 'Tempo': tempo em segundos (float)
-              - 'SOC'  : SOC em % (float, 0–100)
-            Estrutura idêntica ao CSV gerado pelo PLECS.
-    """
-    # ------------------------------------------------------------------ #
-    #  1.  Leitura de parâmetros                                           #
-    # ------------------------------------------------------------------ #
-    Ah       = float(cfg_bat.Ah)
-    Ns       = int(cfg_bat.Ns)
-    Np       = int(cfg_bat.Np)
-    soc_prof = cfg_bat.soc_prof
-    ocv_prof = cfg_bat.ocv_prof
-    soc_min  = float(cfg_bat.soc_min)
-    soc_max  = float(cfg_bat.soc_max)
-    p_bess   = float(cfg_bat.P_bess)
-    rendimento_pcs = float(getattr(cfg_bat, 'rendimento_pcs', 0.88))
-
-    Q_efetivo_Ah = Ah * Np * soh_atual #provocando o dano do SOH
-    soc_frac = float(soc_inicial)
-
-    col_tempo    = df_mes.columns[0]
-    col_potencia = df_mes.columns[1]
-
-    tempos_min = df_mes[col_tempo].to_numpy(dtype=float)
-    pot_w      = df_mes[col_potencia].to_numpy(dtype=float)
-
-    n_passos = len(tempos_min)
-
-    # ------------------------------------------------------------------ #
-    #  3.  Pré-alocação dos arrays de saída                               #
-    # ------------------------------------------------------------------ #
-    tempos_s = tempos_min * 60.0          # minutos → segundos
-    soc_out  = np.empty(n_passos, dtype=float)
-    soc_out[0] = soc_pct
-
-    # ------------------------------------------------------------------ #
-    #  4.  Integração de Coulomb passo a passo                            #
-    # ------------------------------------------------------------------ #
-    soc_min_frac = soc_min
-    soc_max_frac = soc_max
-
-    for k in range(n_passos - 1):
-        # Intervalo de tempo em horas
-        dt_h = (tempos_min[k + 1] - tempos_min[k]) / 60.0
-
-        # 1. Potência solicitada pelo lado CA (W) — limitada à potência máxima do BESS
-        p_ca_w = np.clip(pot_w[k], -p_bess, p_bess)
-        
-        # Seleção da Curva OCV considerando Histerese (Carga vs Descarga)
-        if p_ca_w > 0 and getattr(cfg_bat, 'ocv_charge_prof', None) is not None:
-            curva_ocv_ativa = cfg_bat.ocv_charge_prof
-        elif p_ca_w < 0 and getattr(cfg_bat, 'ocv_discharge_prof', None) is not None:
-            curva_ocv_ativa = cfg_bat.ocv_discharge_prof
-        else:
-            curva_ocv_ativa = ocv_prof
-
-        # Tensão OCV atual (V) por célula
-        v_ocv_celula = _interpolar_ocv(soc_out[k], soc_prof, curva_ocv_ativa)
-        if v_ocv_celula <= 0.0:
-            v_ocv_celula = curva_ocv_ativa[0] if curva_ocv_ativa[0] > 0 else 1.0
-            
-        # Tensão real do banco
-        v_ocv_banco = v_ocv_celula * Ns
-        
-        # 2. Potência efetiva na Bateria DC (Aplicando o Rendimento)
-        #  Convenção de sinal:
-        #    P > 0  →  carga (lado CA injeta energia no BESS). Bateria recebe menos energia.
-        #    P < 0  →  descarga (BESS injeta na rede). Bateria precisa entregar mais energia.
-        if p_ca_w > 0:
-            p_bateria_w = p_ca_w * rendimento_pcs
-        elif p_ca_w < 0:
-            p_bateria_w = p_ca_w / rendimento_pcs
-        else:
-            p_bateria_w = 0.0
-            
-        # 3. Resistência do Banco
-        # Rs fornecido no config é por célula.
-        # R_banco = Rs_celula * Ns / Np
-        if cfg_bat.Rs is not None:
-            rs_banco = float(cfg_bat.Rs) * Ns / Np
-        else:
-            rs_banco = 0.0
-
-        # 4. Corrente do banco (Resolvendo a Malha do PLECS)
-        # O PLECS divide a Potência pela Tensão NOS TERMINAIS do bloco da Bateria.
-        # A Tensão nos terminais é: V_term = V_ocv_banco + I_banco * rs_banco
-        # E sabemos que: P_bateria_w = V_term * I_banco 
-        # Substituindo: P_bateria_w = (V_ocv_banco + I_banco * rs_banco) * I_banco 
-        #               P_bateria_w = I_banco^2 * rs_banco + V_ocv_banco * I_banco
-        #               0           = rs_banco * I_banco^2 + V_ocv_banco * I_banco - P_bateria_w
-        if rs_banco > 0.0:
-            delta = v_ocv_banco**2 + 4 * rs_banco * p_bateria_w # + por que a corrente é negativa quando a bateria está descarregando
-            if delta < 0:
-                # Caso limite teórico excedido (ex: forçando potência excessiva numa bateria morta)
-                corrente_banco = -v_ocv_banco / (2 * rs_banco)
-            else:
-                corrente_banco = (-v_ocv_banco + np.sqrt(delta)) / (2 * rs_banco)
-        else:
-            # Caso ideal (sem resistência interna)
-            corrente_banco = p_bateria_w / v_ocv_banco
-        
-        # 4. Corrente que flui por uma célula / string individual (dividindo pelos paralelos)
-        corrente_celula = corrente_banco / Np
-            
-        # 5. Variação de SOC (Integradora):
-        #    Cálculo na Célula: ΔSOC = (I_cel / (Ah_celula * SOH)) * dt_h * 100 %
-        #    Q_efetivo da célula individual = Ah * soh_atual
-        q_efetivo_celula = Ah * soh_atual
-        
-        delta_soc  = (corrente_celula * dt_h / q_efetivo_celula)  # [0-1]
-
-        soc_novo = soc_out[k] + delta_soc
-
-        # Clamp físico e operacional
-        soc_novo = float(np.clip(soc_novo, soc_min_frac, soc_max_frac))
-        soc_out[k + 1] = soc_novo
-
-    # ------------------------------------------------------------------ #
-    #  5.  Monta DataFrame de saída (idêntico ao CSV do PLECS)            #
-    # ------------------------------------------------------------------ #
-    df_resultado = pd.DataFrame({
-        'Tempo': tempos_s,
-        'SOC':   soc_out,
-    })
-
-    logger.info(
-        f"   [BattSim] SOC inicial={soc_out[0]*100:.1f}% | "
-        f"SOC final={soc_out[-1]*100:.1f}% | "
-        f"min={soc_out.min()*100:.1f}% | max={soc_out.max()*100:.1f}%"
-    )
-
-    return df_resultado
-
-def picos_e_vales(profile_series: pd.Series, prominence: float = 1.0) -> np.ndarray:
-    """
-    Extrai picos e vales de uma Série de SOC.
-    """
+def picos_e_vales(profile_series: pd.Series, prominence: float = 0.01) -> np.ndarray:
+    """Extrai picos e vales de uma Série de SOC de forma eficiente."""
     profile_array = profile_series.to_numpy()
+    if len(profile_array) < 3:
+        return profile_array
 
     picos, _ = find_peaks(profile_array, prominence=prominence)
     vales, _ = find_peaks(-profile_array, prominence=prominence)
 
-    # Usa os ÍNDICES da Série original
-    indices_combinados = np.concatenate((
-        [profile_series.index[0]],
-        profile_series.index[picos],
-        profile_series.index[vales],
-        [profile_series.index[-1]]
-    ))
-    indices_ordenados = np.sort(np.unique(indices_combinados))
+    indices_combinados = np.sort(np.unique(np.concatenate((
+        [0],
+        picos,
+        vales,
+        [len(profile_array) - 1]
+    ))))
 
-    soc_profile_simp = profile_series.loc[indices_ordenados].to_numpy()
-    return soc_profile_simp
+    return profile_array[indices_combinados]
 
-def ciclos_idle(profile: list, dt_minutos_soc: float, minutos_por_mes: float) -> list:
-    """
-    Encontra períodos 'idle' (SOC constante) em um perfil de SOC.
-    """
-    cont = 0
+def ciclos_idle(profile: np.ndarray, dt_minutos_soc: float, minutos_por_mes: float) -> list:
+    """Encontra períodos 'idle' utilizando vetorização NumPy para detectar mudanças."""
+    if len(profile) < 2:
+        return []
+    
+    # Detecta onde o SOC muda entre passos consecutivos
+    changes = np.diff(profile) != 0
+    change_indices = np.where(changes)[0] + 1
+    
+    # Define os limites de cada segmento constante
+    start_indices = np.concatenate(([0], change_indices))
+    end_indices = np.concatenate((change_indices, [len(profile)]))
+    
     idle_cycles = []
-    
-    for i in range(len(profile)-1):
-        if profile[i] == profile[i+1]:
-            cont += 1
-        else:
-            if cont > 0:
-                num_amostras_idle = cont + 1
-                tempo_total_minutos = num_amostras_idle * dt_minutos_soc
-                
-                data = {
-                    't': num_amostras_idle,
-                    't_meses': tempo_total_minutos / minutos_por_mes,
-                    'SOC': profile[i],
-                    'index': i
-                }
-                idle_cycles.append(data)
-            cont = 0
-    
-    if cont > 0:
-        num_amostras_idle = cont + 1
-        tempo_total_minutos = num_amostras_idle * dt_minutos_soc
-        data = {
-            't': num_amostras_idle,
-            't_meses': tempo_total_minutos / minutos_por_mes,
-            'SOC': profile[len(profile)-1],
-            'index': len(profile)-1
-        }
-        idle_cycles.append(data)
+    for start, end in zip(start_indices, end_indices):
+        duration = end - start
+        if duration > 1:
+            soc_val = profile[start]
+            tempo_total_minutos = duration * dt_minutos_soc
+            idle_cycles.append({
+                't': int(duration),
+                't_meses': float(tempo_total_minutos / minutos_por_mes),
+                'SOC': float(soc_val),
+                'index': int(start)
+            })
             
     return idle_cycles

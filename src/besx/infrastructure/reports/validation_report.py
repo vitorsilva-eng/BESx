@@ -78,6 +78,12 @@ def criar_sheet_configuracao(writer: pd.ExcelWriter, config: Any) -> None:
     dados_config.append(['Ah', config.bateria.Ah])
     dados_config.append(['Ns (células em série)', config.bateria.Ns])
     dados_config.append(['Np (células em paralelo)', config.bateria.Np])
+    
+    # Novos parâmetros de paralelismo
+    n_unid = getattr(config.simulacao, 'n_unidades', 1)
+    dados_config.append(['Unidades em Paralelo (N)', n_unid])
+    dados_config.append(['Capacidade Total (Wh)', config.bateria.capacidade_nominal_wh * n_unid])
+    dados_config.append(['Potência Total (W)', config.bateria.P_bess * n_unid])
     dados_config.append(['', ''])
     
     # Seção: Modelo de Degradação - Ciclo

@@ -6,8 +6,10 @@ openpyxl==3.1.5
 rainflow==3.2.0
 ipython==8.30.0
 colorlog==6.10.1
-streamlit==1.45.1
+streamlit==1.57.0
 plotly==5.24.1
 pydantic==2.10.3
 google-genai==1.65.0
 holidays==0.45
+numba==0.61.0
+llvmlite==0.44.0

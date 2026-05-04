@@ -1,15 +1,16 @@
 import streamlit as st
-import pandas as pd
 import time
 import os
 from besx.infrastructure.ui.streamlit.utils.render_utils import render_glass_battery
-from besx.application.simulation import SimulationManager
 from besx.config import CONFIGURACAO, ModeloDegradacaoConfig, PATH_DATABASE
 
 def render_step_simulation():
     """
     Passo 3: Configuração do Motor e Execução da Simulação.
     """
+    import pandas as pd
+    from besx.application.simulation import SimulationManager
+
     st.header("⚙️ Passo 3: Execução da Simulação")
     st.markdown("Escolha o motor de cálculo e inicie o processamento da jornada da bateria.")
 

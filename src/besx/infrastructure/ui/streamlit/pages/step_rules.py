@@ -1,16 +1,5 @@
 import streamlit as st
-import pandas as pd
-import holidays
-from besx.application.ems.ems_manager import EMSManager, LoadShiftingStrategy, PeakShavingStrategy
-from besx.application.analysis.load_analyzer import LoadAnalyzer
 from besx.infrastructure.logging.logger import logger
-from besx.infrastructure.visualization.plotly_plots import (
-    plot_ems_dispatch_comparison, 
-    plot_energy_balance,
-    plot_load_frequency_histogram,
-    plot_load_heatmap,
-    plot_peak_analysis
-)
 from besx.config import CONFIGURACAO
 import os
 import io
@@ -19,6 +8,18 @@ def render_step_rules():
     """
     Passo 1: Definição das Regras do Local e Estratégia EMS.
     """
+    import pandas as pd
+    import holidays
+    from besx.application.ems.ems_manager import EMSManager, LoadShiftingStrategy, PeakShavingStrategy
+    from besx.application.analysis.load_analyzer import LoadAnalyzer
+    from besx.infrastructure.visualization.plotly_plots import (
+        plot_ems_dispatch_comparison, 
+        plot_energy_balance,
+        plot_load_frequency_histogram,
+        plot_load_heatmap,
+        plot_peak_analysis
+    )
+
     st.header("📋 Passo 1: Regras do Local e Estratégia EMS")
     st.markdown("Nesta etapa, definimos o perfil de consumo do cliente e as regras da concessionária.")
 
