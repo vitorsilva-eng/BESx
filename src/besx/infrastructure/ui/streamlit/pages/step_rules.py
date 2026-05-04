@@ -10,7 +10,7 @@ def render_step_rules():
     """
     import pandas as pd
     import holidays
-    from besx.application.ems.ems_manager import EMSManager, LoadShiftingStrategy, PeakShavingStrategy
+    from besx.application.ems.ems_manager import EMSManager, LoadShiftingStrategy, PeakShavingStrategy, PowerFactorCorrectionStrategy
     from besx.application.analysis.load_analyzer import LoadAnalyzer
     from besx.infrastructure.visualization.plotly_plots import (
         plot_ems_dispatch_comparison, 
@@ -106,7 +106,7 @@ def render_step_rules():
 
     with col2:
         st.subheader("🎯 Estratégia de Despacho")
-        strategy_name = st.radio("Algoritmo Principal", ["Peak Shaving", "Load Shifting"], index=0, horizontal=True)
+        strategy_name = st.radio("Algoritmo Principal", ["Peak Shaving", "Load Shifting", "Power Factor Correction"], index=0, horizontal=True)
         
         params = {}
         if strategy_name == "Peak Shaving":
@@ -134,6 +134,11 @@ def render_step_rules():
             params['ignorar_fins_de_semana'] = st.checkbox("Ignorar Sábados e Domingos", value=True)
             custom_feriados_str = st.text_input("Feriados Locais Extras (YYYY-MM-DD)", placeholder="EX: 2024-11-20")
             params['feriados_municipais'] = [x.strip() for x in custom_feriados_str.split(',')] if custom_feriados_str.strip() else []
+
+        elif strategy_name == "Power Factor Correction":
+            params['pf_target'] = st.number_input("Fator de Potência Alvo", min_value=0.8, max_value=1.0, value=0.98, step=0.01)
+            params['s_max_va'] = st.number_input("Capacidade do Inversor (VA)", min_value=1000.0, value=125000.0, step=5000.0)
+            st.info("💡 Esta estratégia despacha reativos para atingir o FP alvo, limitada pela capacidade do inversor.")
 
     st.markdown("---")
     
@@ -210,12 +215,18 @@ def render_step_rules():
                         'limite_demanda_kw': params['limite_demanda_kw'], 'ignorar_fins_de_semana': params['ignorar_fins_de_semana'],
                         'feriados': lista_feriados
                     }
-                else:
+                elif strategy_name == "Peak Shaving":
                     ems_manager.strategies = [PeakShavingStrategy()]
                     kwargs = {
                         'limite_demanda_kw': params['peak_limit_kw'],
                         'faixa_seguranca_kw': params['faixa_seguranca_kw'],
                         'faixa_seguranca_pct': params['faixa_seguranca_pct']
+                    }
+                elif strategy_name == "Power Factor Correction":
+                    ems_manager.strategies = [PowerFactorCorrectionStrategy()]
+                    kwargs = {
+                        'pf_target': params['pf_target'],
+                        's_max_va': params['s_max_va']
                     }
                 
                 df_result = ems_manager.run(df_full, time_col=time_col, load_col=load_col, **kwargs)
