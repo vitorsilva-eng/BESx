@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import pandas as pd
+import numpy as np
 from typing import List
 from besx.application.ems.ems_engine import BessEMS
 from besx.infrastructure.logging.logger import logger
@@ -70,11 +71,12 @@ class EMSManager:
     for the Battery Energy Storage System (BESS).
     """
     
-    def __init__(self, strategies: List[BaseStrategy], p_bess_max_w: float, capacidade_nominal_wh: float):
+    def __init__(self, strategies: List[BaseStrategy], p_bess_max_w: float, capacidade_nominal_wh: float, s_inversor_va: float = None):
         self.strategies = strategies
         self.p_bess_max_w = p_bess_max_w
         self.capacidade_nominal_wh = capacidade_nominal_wh
         self.bess_ems = BessEMS()
+        self.s_inversor_va = s_inversor_va if s_inversor_va is not None else self.p_bess_max_w
         
     def validate_and_prepare_input(self, df: pd.DataFrame, time_col: str, load_col: str) -> pd.DataFrame:
         """
@@ -140,6 +142,37 @@ class EMSManager:
                 df['Carga_W'] = df[load_col] * 1000
             else:
                  df['Carga_W'] = df[load_col]
+            
+        # Power Triangle Inference
+        has_fp = 'Carga_FP' in df.columns
+        has_var = 'Carga_VAr' in df.columns
+        has_va = 'Carga_VA' in df.columns
+        w = df['Carga_W'].values
+        
+        if has_fp:
+            fp = df['Carga_FP'].values
+            fp_safe = np.where(fp == 0, 1e-9, fp)
+            if not has_va:
+                df['Carga_VA'] = w / fp_safe
+            if not has_var:
+                df['Carga_VAr'] = w * np.tan(np.arccos(np.clip(fp, -1.0, 1.0)))
+        elif has_var:
+            var = df['Carga_VAr'].values
+            va = np.sqrt(w**2 + var**2)
+            if not has_va:
+                df['Carga_VA'] = va
+            if not has_fp:
+                df['Carga_FP'] = np.where(va == 0, 1.0, w / va)
+        elif has_va:
+            va = df['Carga_VA'].values
+            if not has_var:
+                df['Carga_VAr'] = np.sqrt(np.clip(va**2 - w**2, 0, None))
+            if not has_fp:
+                df['Carga_FP'] = np.where(va == 0, 1.0, w / va)
+        else:
+            df['Carga_VAr'] = 0.0
+            df['Carga_VA'] = w
+            df['Carga_FP'] = 1.0
             
         return df
 
