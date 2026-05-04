@@ -229,3 +229,97 @@ def plot_peak_analysis(energy_ponta_kwh: float, energy_fora_ponta_kwh: float):
     )
     
     return fig
+
+def plot_reactive_power_comparison(df: pd.DataFrame, time_col: str):
+    """
+    Plots Original Reactive Load, Adjusted Reactive Load, and Battery Reactive Dispatch.
+    """
+    fig = go.Figure()
+    
+    # Original Reactive Load
+    if 'Carga_VAr' in df.columns:
+        fig.add_trace(go.Scatter(
+            x=df[time_col], y=df['Carga_VAr'],
+            name="Reativo Original (VAr)",
+            line=dict(color='#636efa', width=2),
+            opacity=0.4
+        ))
+    
+    # Adjusted Reactive Load (Network view)
+    q_bat = df.get('Potencia_Reativa_Bateria_VAr', 0.0)
+    q_adj = df['Carga_VAr'] + q_bat
+    
+    fig.add_trace(go.Scatter(
+        x=df[time_col], y=q_adj,
+        name="Reativo Ajustado (VAr)",
+        line=dict(color='#00ffcc', width=3)
+    ))
+    
+    # Battery Reactive Power
+    if 'Potencia_Reativa_Bateria_VAr' in df.columns:
+        fig.add_trace(go.Scatter(
+            x=df[time_col], y=df['Potencia_Reativa_Bateria_VAr'],
+            name="Despacho Reativo Bateria (VAr)",
+            fill='tozeroy',
+            line=dict(color='#ff0055', dash='dot', width=1)
+        ))
+
+    fig.update_layout(
+        title="Comparativo de Reativos (VAr) - Compensação BESS",
+        xaxis_title="Tempo",
+        yaxis_title="Potência Reativa (VAr)",
+        template="plotly_dark",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        height=450,
+        margin=dict(l=20, r=20, t=80, b=20)
+    )
+    
+    return fig
+
+def plot_power_factor_comparison(df: pd.DataFrame, time_col: str, pf_target: float = None):
+    """
+    Plots Power Factor comparison (Before vs After).
+    """
+    fig = go.Figure()
+    
+    # Original PF
+    if 'Carga_FP' in df.columns:
+        fig.add_trace(go.Scatter(
+            x=df[time_col], y=df['Carga_FP'],
+            name="FP Original",
+            line=dict(color='#636efa', width=2),
+            opacity=0.4
+        ))
+    
+    # Adjusted PF (calculated for plot if not pre-calculated)
+    p_adj = df['Carga_Ajustada_W']
+    q_adj = df['Carga_VAr'] + df.get('Potencia_Reativa_Bateria_VAr', 0.0)
+    s_adj = np.sqrt(p_adj**2 + q_adj**2)
+    fp_adj = np.where(s_adj == 0, 1.0, p_adj / s_adj)
+    
+    fig.add_trace(go.Scatter(
+        x=df[time_col], y=fp_adj,
+        name="FP Ajustado",
+        line=dict(color='#00ffcc', width=3)
+    ))
+    
+    # Reference Line (Legal Limit 0.92)
+    fig.add_hline(y=0.92, line_dash="dash", line_color="#ffcc00", annotation_text="Limite Legal (0.92)")
+    
+    # Target PF Reference
+    if pf_target:
+        fig.add_hline(y=pf_target, line_dash="dot", line_color="#00ff55", annotation_text=f"Alvo: {pf_target}")
+
+    fig.update_layout(
+        title="Comparativo de Fator de Potência (FP)",
+        xaxis_title="Tempo",
+        yaxis_title="Fator de Potência",
+        template="plotly_dark",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        height=450,
+        yaxis=dict(range=[0.7, 1.05]),
+        margin=dict(l=20, r=20, t=80, b=20)
+    )
+    
+    return fig
+

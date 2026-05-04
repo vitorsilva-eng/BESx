@@ -17,7 +17,9 @@ def render_step_rules():
         plot_energy_balance,
         plot_load_frequency_histogram,
         plot_load_heatmap,
-        plot_peak_analysis
+        plot_peak_analysis,
+        plot_reactive_power_comparison,
+        plot_power_factor_comparison
     )
 
     st.header("📋 Passo 1: Regras do Local e Estratégia EMS")
@@ -265,7 +267,7 @@ def render_step_rules():
             st.warning("⚠️ O botão de 'Injetar para Simulação' permanecerá bloqueado até que uma planilha válida seja carregada.")
             st.stop() # Interrompe a renderização para os passos seguintes
             
-        t1, t2, t3, t4 = st.tabs(["📊 Resumo Geral", "⚡ Ponta & Energia", "📅 Padrões", "⚙️ Qualidade"])
+        t1, t2, t3, t4, t5 = st.tabs(["📊 Resumo Geral", "⚡ Ponta & Energia", "📅 Padrões", "⚡ Qualidade (PFC)", "⚙️ Diagnóstico"])
         
         with t1:
             m1, m2, m3, m4 = st.columns(4)
@@ -296,7 +298,31 @@ def render_step_rules():
             st.plotly_chart(plot_load_heatmap(df_res, time_col, load_col), width='stretch')
             st.caption("O mapa de calor acima mostra a média de consumo para cada hora do dia agrupada por dia da semana.")
 
+            st.plotly_chart(plot_energy_balance(df_res, time_col), width='stretch')
+
         with t4:
+            st.subheader("⚡ Qualidade de Energia e Reativos")
+            st.markdown("Análise da compensação de reativos e melhoria do Fator de Potência.")
+            
+            # Metrics for PF
+            p_adj = df_res['Carga_Ajustada_W']
+            q_adj = df_res['Carga_VAr'] + df_res.get('Potencia_Reativa_Bateria_VAr', 0.0)
+            s_adj = np.sqrt(p_adj**2 + q_adj**2)
+            fp_adj = np.where(s_adj == 0, 1.0, p_adj / s_adj)
+            
+            fp_min_orig = df_res['Carga_FP'].min()
+            fp_min_adj = fp_adj.min()
+            
+            m_q1, m_q2, m_q3 = st.columns(3)
+            m_q1.metric("FP Mínimo (Original)", f"{fp_min_orig:.3f}")
+            m_q2.metric("FP Mínimo (Pós-BESS)", f"{fp_min_adj:.3f}", delta=f"{fp_min_adj - fp_min_orig:.3f}")
+            
+            target_pf = p_used.get('pf_target', 0.98) if s_used == "Power Factor Correction" else None
+            
+            st.plotly_chart(plot_power_factor_comparison(df_res, time_col, pf_target=target_pf), width='stretch')
+            st.plotly_chart(plot_reactive_power_comparison(df_res, time_col), width='stretch')
+
+        with t5:
             q1, q2, q3 = st.columns(3)
             q1.metric("Intervalo (dT)", f"{metrics.dt_min:.1f} min")
             q2.metric("Duração Total", f"{metrics.duration_days:.1f} dias")
