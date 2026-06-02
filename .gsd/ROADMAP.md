@@ -53,11 +53,11 @@
 **Depends on**: Phase 7
 
 ### Phase 9: Combined EMS Algorithm (Load Shifting & Peak Shaving)
-**Status**: 🗓️ Not started
+**Status**: ✅ Complete
 **Objective**: Implement a combined operational dispatch strategy that merges Load Shifting (arbitrage) and Peak Shaving (demand limitation) into a unified, mathematically prioritized, and vectorized EMS algorithm.
 **Requirements**: REQ-09, REQ-10 (upgrade to allow combined selection)
-- [ ] Implement `CombinedStrategyLSPS` in `ems_manager.py`
-- [ ] Add `gerar_perfil_combinado_ls_ps` vectorized dispatch in `ems_engine.py`
-- [ ] Integrate Combined strategy UI input & configuration inside `step_rules.py`
-- [ ] Add extensive visual reporting showing Combined actions in Streamlit
+- [x] Implement `CombinedStrategyLSPS` in `ems_manager.py`
+- [x] Add `gerar_perfil_combinado_ls_ps` vectorized dispatch in `ems_engine.py`
+- [x] Integrate Combined strategy UI input & configuration inside `step_rules.py`
+- [x] Add extensive visual reporting showing Combined actions in Streamlit
 
