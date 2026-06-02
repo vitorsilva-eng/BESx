@@ -11,7 +11,7 @@ def render_step_rules():
     import pandas as pd
     import numpy as np
     import holidays
-    from besx.application.ems.ems_manager import EMSManager, LoadShiftingStrategy, PeakShavingStrategy, PowerFactorCorrectionStrategy
+    from besx.application.ems.ems_manager import EMSManager, LoadShiftingStrategy, PeakShavingStrategy, PowerFactorCorrectionStrategy, CombinedStrategyLSPS
     from besx.application.analysis.load_analyzer import LoadAnalyzer
     from besx.infrastructure.visualization.plotly_plots import (
         plot_ems_dispatch_comparison, 
@@ -99,17 +99,33 @@ def render_step_rules():
                 time_col = c_a.selectbox("Coluna de Tempo", cols, index=0 if len(cols) > 0 else 0)
                 load_col = c_b.selectbox("Coluna de Carga", cols, index=1 if len(cols) > 1 else 0)
                 
+                with st.expander("🛠️ Colunas Adicionais (PFC / Qualidade)"):
+                    c_fp, c_q = st.columns(2)
+                    fp_col = c_fp.selectbox("Fator de Potência (Opcional)", ["Nenhum"] + cols, index=0)
+                    q_col = c_q.selectbox("Reativo kVARh (Opcional)", ["Nenhum"] + cols, index=0)
+                    
+                    c_va, _ = st.columns(2)
+                    va_col = c_va.selectbox("Potência Aparente kVAh (Opcional)", ["Nenhum"] + cols, index=0)
+
+                    if q_col != "Nenhum":
+                        st.info("💡 Se selecionado kVARh, o sistema calculará o VAr médio baseado no intervalo (dt).")
+                    if va_col != "Nenhum":
+                        st.info("💡 Se selecionado kVAh, o sistema calculará o VA médio baseado no intervalo (dt).")
+                
                 unit_type = st.radio("Unidade original", ["Potência (W/kW)", "Energia (Wh/kWh)"], index=0, horizontal=True)
                 
                 # Save column choices
                 st.session_state.ems_time_col = time_col
                 st.session_state.ems_load_col = load_col
+                st.session_state.ems_fp_col = None if fp_col == "Nenhum" else fp_col
+                st.session_state.ems_q_col = None if q_col == "Nenhum" else q_col
+                st.session_state.ems_va_col = None if va_col == "Nenhum" else va_col
             except Exception as e:
                 st.error(f"Erro ao ler cabeçalho: {e}")
 
     with col2:
         st.subheader("🎯 Estratégia de Despacho")
-        strategy_name = st.radio("Algoritmo Principal", ["Peak Shaving", "Load Shifting", "Power Factor Correction"], index=0, horizontal=True)
+        strategy_name = st.radio("Algoritmo Principal", ["Peak Shaving", "Load Shifting", "Power Factor Correction", "Combined (LS + PS)"], index=0, horizontal=True)
         
         params = {}
         if strategy_name == "Peak Shaving":
@@ -142,6 +158,29 @@ def render_step_rules():
             params['pf_target'] = st.number_input("Fator de Potência Alvo", min_value=0.8, max_value=1.0, value=0.98, step=0.01)
             params['s_max_va'] = st.number_input("Capacidade do Inversor (VA)", min_value=1000.0, value=125000.0, step=5000.0)
             st.info("💡 Esta estratégia despacha reativos para atingir o FP alvo, limitada pela capacidade do inversor.")
+
+        elif strategy_name == "Combined (LS + PS)":
+            params['limite_demanda_kw'] = st.number_input("Limite de Pico Contratado (kW)", value=100.0, step=10.0)
+            c_s1, c_s2 = st.columns(2)
+            params['faixa_seguranca_kw'] = c_s1.number_input("Margem Absoluta (kW)", value=0.0)
+            params['faixa_seguranca_pct'] = c_s2.number_input("Margem Percentual (%)", value=0.0)
+            
+            st.markdown("⏱️ **Janelas Horárias (Load Shifting)**")
+            cA, cB = st.columns(2)
+            params['hora_inic_carga'] = cA.number_input("Inic. Carga (h)", 0, 23, 22)
+            params['hora_fim_carga'] = cB.number_input("Fim Carga (h)", 0, 23, 17)
+            
+            cC, cD = st.columns(2)
+            params['hora_inic_descarga'] = cC.number_input("Inic. Ponta (h)", 0, 23, 18)
+            params['hora_fim_descarga'] = cD.number_input("Fim Ponta (h)", 0, 23, 21)
+            
+            st.markdown("📅 **Localização e Feriados**")
+            estados_br = ["Nenhum", "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]
+            params['estado'] = st.selectbox("Estado (UF) para Feriados", estados_br, index=0)
+            
+            params['ignorar_fins_de_semana'] = st.checkbox("Ignorar Sábados e Domingos", value=True)
+            custom_feriados_str = st.text_input("Feriados Locais Extras (YYYY-MM-DD)", placeholder="EX: 2024-11-20")
+            params['feriados_municipais'] = [x.strip() for x in custom_feriados_str.split(',')] if custom_feriados_str.strip() else []
 
     st.markdown("---")
     
@@ -231,7 +270,32 @@ def render_step_rules():
                         'pf_target': params['pf_target'],
                         's_max_va': params['s_max_va']
                     }
+                elif strategy_name == "Combined (LS + PS)":
+                    ems_manager.strategies = [CombinedStrategyLSPS()]
+                    if params.get('feriados_municipais'):
+                        try:
+                            custom_dates = pd.to_datetime(params['feriados_municipais']).date.tolist()
+                            lista_feriados.extend(custom_dates)
+                        except: pass
+                    
+                    kwargs = {
+                        'limite_demanda_kw': params['limite_demanda_kw'],
+                        'hora_inicio_carga': params['hora_inic_carga'], 'hora_fim_carga': params['hora_fim_carga'],
+                        'hora_inicio_descarga': params['hora_inic_descarga'], 'hora_fim_descarga': params['hora_fim_descarga'],
+                        'faixa_seguranca_kw': params['faixa_seguranca_kw'],
+                        'faixa_seguranca_pct': params['faixa_seguranca_pct'],
+                        'ignorar_fins_de_semana': params['ignorar_fins_de_semana'],
+                        'feriados': lista_feriados
+                    }
                 
+                # Pass explicit column selection for PFC if available
+                if st.session_state.get('ems_fp_col'):
+                    kwargs['fp_col'] = st.session_state.ems_fp_col
+                if st.session_state.get('ems_q_col'):
+                    kwargs['q_col'] = st.session_state.ems_q_col
+                if st.session_state.get('ems_va_col'):
+                    kwargs['va_col'] = st.session_state.ems_va_col
+
                 df_result = ems_manager.run(df_full, time_col=time_col, load_col=load_col, **kwargs)
                 st.session_state.ems_preview_result = df_result
                 st.session_state.ems_params_used = params
@@ -277,9 +341,8 @@ def render_step_rules():
             m3.metric("Carga Média", f"{metrics.p_avg_w/1000:.1f} kW")
             m4.metric("Fator de Carga", f"{metrics.load_factor:.2%}")
             
-            # Gráfico de Despacho (Original da tela)
             s_used = st.session_state.get('ems_strategy_used', "Load Shifting")
-            limite_exibicao_w = (p_used.get('limite_demanda_kw', 0) if s_used == "Load Shifting" else p_used.get('peak_limit_kw', 0)) * 1000.0
+            limite_exibicao_w = (p_used.get('limite_demanda_kw', 0) if s_used in ["Load Shifting", "Combined (LS + PS)"] else p_used.get('peak_limit_kw', 0)) * 1000.0
             st.plotly_chart(plot_ems_dispatch_comparison(df_res, time_col, limite_w=limite_exibicao_w), width='stretch', key="chart_dispatch_main")
 
         with t2:
