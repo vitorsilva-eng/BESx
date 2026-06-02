@@ -83,3 +83,38 @@ def test_combined_ems_priority_and_logic():
     
     # t4: 19:00 Saturday -> Idle on weekend discharge window (0kW)
     assert np.isclose(powers[4], 0.0), f"Expected 0kW (idle) on Saturday discharge window, got {powers[4]/1000}kW"
+
+def test_ems_manager_unit_conversions():
+    """
+    Unit test to verify that the EMSManager correctly converts:
+    1. W -> verbatim Watts
+    2. kW -> scales by 1000
+    3. Wh -> divides by dt
+    4. kWh -> scales by 1000 and divides by dt
+    """
+    timestamps = [
+        datetime(2026, 6, 1, 0, 0, 0),
+        datetime(2026, 6, 1, 0, 15, 0), # 15 minutes dt = 0.25h
+    ]
+    
+    # 1. Test W (verbatim)
+    df_w = pd.DataFrame({'Time': pd.to_datetime(timestamps), 'Load': [100.0, 200.0]})
+    manager = EMSManager(strategies=[], p_bess_max_w=100.0, capacidade_nominal_wh=100.0)
+    df_out = manager.validate_and_prepare_input(df_w, time_col='Time', load_col='Load', unit='W')
+    assert np.allclose(df_out['Carga_W'].values, [100.0, 200.0])
+    
+    # 2. Test kW (x1000)
+    df_kw = pd.DataFrame({'Time': pd.to_datetime(timestamps), 'Load': [1.5, 2.5]})
+    df_out = manager.validate_and_prepare_input(df_kw, time_col='Time', load_col='Load', unit='kW')
+    assert np.allclose(df_out['Carga_W'].values, [1500.0, 2500.0])
+    
+    # 3. Test Wh (/dt = /0.25 = x4)
+    df_wh = pd.DataFrame({'Time': pd.to_datetime(timestamps), 'Load': [10.0, 20.0]})
+    df_out = manager.validate_and_prepare_input(df_wh, time_col='Time', load_col='Load', unit='Wh')
+    assert np.allclose(df_out['Carga_W'].values, [40.0, 80.0])
+    
+    # 4. Test kWh (x1000 /dt = x4000)
+    df_kwh = pd.DataFrame({'Time': pd.to_datetime(timestamps), 'Load': [10.0, 20.0]})
+    df_out = manager.validate_and_prepare_input(df_kwh, time_col='Time', load_col='Load', unit='kWh')
+    assert np.allclose(df_out['Carga_W'].values, [40000.0, 80000.0])
+

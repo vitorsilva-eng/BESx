@@ -112,7 +112,7 @@ def render_step_rules():
                     if va_col != "Nenhum":
                         st.info("💡 Se selecionado kVAh, o sistema calculará o VA médio baseado no intervalo (dt).")
                 
-                unit_type = st.radio("Unidade original", ["Potência (W/kW)", "Energia (Wh/kWh)"], index=0, horizontal=True)
+                unit_type = st.radio("Unidade original do arquivo", ["W", "kW", "Wh", "kWh"], index=0, horizontal=True)
                 
                 # Save column choices
                 st.session_state.ems_unit_type = unit_type
@@ -297,8 +297,8 @@ def render_step_rules():
                 if st.session_state.get('ems_va_col'):
                     kwargs['va_col'] = st.session_state.ems_va_col
                 
-                # Pass energy unit conversion flag
-                kwargs['is_energy'] = (st.session_state.get('ems_unit_type') == "Energia (Wh/kWh)")
+                # Pass physical unit configuration
+                kwargs['unit'] = st.session_state.get('ems_unit_type')
 
                 df_result = ems_manager.run(df_full, time_col=time_col, load_col=load_col, **kwargs)
                 st.session_state.ems_preview_result = df_result
@@ -314,11 +314,12 @@ def render_step_rules():
     if st.session_state.get('ems_preview_result') is not None:
         df_res = st.session_state.ems_preview_result
         
-        # REQ-08 UI Warning for auto-conversion or auto-scaling
+        # REQ-08 UI Warning for conversion or scaling
+        orig_unit = getattr(df_res, 'attrs', {}).get('original_unit', 'W')
         if getattr(df_res, 'attrs', {}).get('conversion_applied'):
-            st.warning(f"⚠️ **Conversão de Unidade Automática (REQ-08):** Detectamos que a coluna '{st.session_state.ems_load_col}' continha valores em formato de Energia. O sistema converteu automaticamente para Potência média em Watts (W) baseando-se no intervalo temporal (dt).")
+            st.warning(f"⚠️ **Conversão de Unidade (REQ-08):** A coluna '{st.session_state.ems_load_col}' foi identificada em formato de Energia ({orig_unit}). O sistema converteu automaticamente para Potência média em Watts (W) baseando-se no intervalo temporal (dt).")
         elif getattr(df_res, 'attrs', {}).get('scaling_applied'):
-            st.warning(f"⚠️ **Escalonamento Automático (REQ-08):** Detectamos que a coluna '{st.session_state.ems_load_col}' continha valores em formato de kW. O sistema escalonou automaticamente os valores para Watts (W) para garantir a precisão física do simulador.")
+            st.warning(f"⚠️ **Escalonamento Automático (REQ-08):** A coluna '{st.session_state.ems_load_col}' foi identificada em formato de {orig_unit}. O sistema escalonou automaticamente os valores para Watts (W) para garantir a precisão física do simulador BESS.")
 
         # --- NOVO: ANALISADOR DE CARGA (DIAGNÓSTICO AVANÇADO) ---
         time_col = st.session_state.get('ems_time_col') or df_res.columns[0]

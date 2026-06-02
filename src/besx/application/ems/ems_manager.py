@@ -119,7 +119,7 @@ class EMSManager:
         self.bess_ems = BessEMS()
         self.s_inversor_va = s_inversor_va if s_inversor_va is not None else self.p_bess_max_w
         
-    def validate_and_prepare_input(self, df: pd.DataFrame, time_col: str, load_col: str, fp_col: str = None, q_col: str = None, va_col: str = None) -> pd.DataFrame:
+    def validate_and_prepare_input(self, df: pd.DataFrame, time_col: str, load_col: str, fp_col: str = None, q_col: str = None, va_col: str = None, unit: str = None) -> pd.DataFrame:
         """
         Validates the input DataFrame following strict rules (REQ-04 to REQ-08).
         
@@ -166,50 +166,40 @@ class EMSManager:
         # Ensure median dt works for calculation
         dt_val = dt_median if pd.notna(dt_median) else 1.0
 
-        # REQ-08: Explicit unit conversion & Heuristic energy/power scale detection
+        # REQ-08: Explicit unit conversion based on physical unit selected by the user
         raw_values = df[load_col].values
         
-        # Heuristic detection of energy (kWh/Wh) columns
-        col_name_lower = str(load_col).lower()
-        is_energy_name = any(x in col_name_lower for x in ['kwh', 'wh', 'energia', 'energy'])
-        
-        # If values are unusually small for Watts in commercial buildings (e.g. max value < 5000)
-        # and there is a datetime step dt, it is highly likely to be energy (kWh or Wh)
-        is_suspiciously_small = np.max(raw_values) < 5000.0
-        
-        is_energy_detected = is_energy_name or is_suspiciously_small
-        
-        # User manual override from kwargs
-        user_specified_energy = kwargs.get('is_energy', False)
-        
-        if user_specified_energy or is_energy_detected:
-            # Determine if values are in kWh or Wh. 
-            is_kwh = True
-            if np.max(raw_values) > 1000000.0: # If huge, might be Wh
-                is_kwh = False
-                
-            multiplier = 1000.0 if is_kwh else 1.0
+        # Falls back to heuristic detection if unit is not specified or not recognized
+        if not unit or unit not in ["W", "kW", "Wh", "kWh"]:
+            col_name_lower = str(load_col).lower()
+            is_energy_name = any(x in col_name_lower for x in ['kwh', 'wh', 'energia', 'energy'])
+            is_suspiciously_small = np.max(raw_values) < 5000.0
             
-            # Power (W) = Energy (Wh) / dt (hours)
-            df['Carga_W'] = (raw_values * multiplier) / dt_val
-            
-            msg = f"REQ-08: Auto-conversion of energy column '{load_col}' to Power (W) applied using dt={dt_val:.4f}h."
-            if is_energy_detected and not user_specified_energy:
-                msg += " (Heuristic detection triggered due to small value magnitude or column name)."
-            logger.warning(msg)
-            
-            # Save conversion status back into DataFrame attributes so UI can access it
-            df.attrs['conversion_applied'] = True
-            df.attrs['conversion_msg'] = msg
-        else:
-            # Check if values are likely in kW (e.g., peak load is < 2000 for a large dataset).
-            is_kw_detected = np.max(raw_values) < 2000.0
-            if is_kw_detected:
-                df['Carga_W'] = raw_values * 1000.0
-                logger.warning(f"REQ-08: Auto-scaling active power column '{load_col}' from kW to Watts.")
-                df.attrs['scaling_applied'] = True
+            if is_energy_name or is_suspiciously_small:
+                unit = "kWh" if np.max(raw_values) < 1000000.0 else "Wh"
             else:
-                df['Carga_W'] = raw_values
+                unit = "kW" if np.max(raw_values) < 2000.0 else "W"
+            logger.warning(f"REQ-08: No explicit unit specified. Heuristically detected '{unit}' for column '{load_col}'.")
+            df.attrs['heuristic_detected_unit'] = unit
+            
+        df.attrs['original_unit'] = unit
+        
+        # Apply conversion/scaling mathematically based on selected unit
+        if unit == "W":
+            df['Carga_W'] = raw_values
+        elif unit == "kW":
+            df['Carga_W'] = raw_values * 1000.0
+            df.attrs['scaling_applied'] = True
+            logger.warning(f"REQ-08: Scaled active power column '{load_col}' from kW to Watts.")
+        elif unit == "Wh":
+            df['Carga_W'] = raw_values / dt_val
+            df.attrs['conversion_applied'] = True
+            logger.warning(f"REQ-08: Converted energy column '{load_col}' from Wh to Power (W) using dt={dt_val:.4f}h.")
+        elif unit == "kWh":
+            df['Carga_W'] = (raw_values * 1000.0) / dt_val
+            df.attrs['conversion_applied'] = True
+            logger.warning(f"REQ-08: Converted energy column '{load_col}' from kWh to Power (W) using dt={dt_val:.4f}h.")
+        
         
         # --- OPTIONAL REACTIVE DATA PROCESSING ---
         if q_col and q_col in df.columns:
@@ -285,7 +275,8 @@ class EMSManager:
             time_col, 
             load_col, 
             fp_col=kwargs.get('fp_col'), 
-            q_col=kwargs.get('q_col')
+            q_col=kwargs.get('q_col'),
+            unit=kwargs.get('unit')
         )
         
         # Initialize Potencia_Bateria_W to 0 conceptually (no dispatch) if not present
