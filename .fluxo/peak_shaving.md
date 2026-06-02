@@ -4,7 +4,7 @@ Esta estratégia visa manter a demanda da rede dentro de um limite contratado, u
 
 ```mermaid
 flowchart TD
-    PS_In[Dados: Carga_W, Limite_kW, Margem] --> PS_1[Cálculo do Limite Efetivo:<br/>L_eff = Limite_kW - Margem]
+    PS_In[Dados de Entrada: <br/> Carga_W, Limite_kW, Margem] --> PS_1[Cálculo do Limite Efetivo:<br/>L_eff = Limite_kW - Margem]
     PS_1 --> PS_2[Comparação Vetorizada:<br/>Delta = L_eff - Carga_W]
     
     PS_2 --> PS_Cond{Delta < 0?}

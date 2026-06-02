@@ -115,16 +115,36 @@ def _run_python(
     col_t = next((c for c in cols if 'tempo' in c.lower() or 'timestamp' in c.lower()), cols[0])
     col_p = next((c for c in cols if 'pot' in c.lower() and c != col_t), cols[1] if len(cols)>1 else cols[0])
     
+    # Standardized column name from Step 1 Normalization
+    q_col_name = 'Potencia_Reativa_Bateria_VAr'
+    
     t_min = df_mes[col_t].min()
     t_max = df_mes[col_t].max()
     
     novo_tempo = np.arange(t_min, t_max + 0.1, 1.0) # 1.0 minute interval
     nova_potencia = np.interp(novo_tempo, df_mes[col_t].values, df_mes[col_p].values)
     
-    df_mes_upsampled = pd.DataFrame({
+    data_upsampled = {
         col_t: novo_tempo,
         col_p: nova_potencia
-    })
+    }
+
+    if q_col_name in df_mes.columns:
+        df_mes_upsampled_q = np.interp(novo_tempo, df_mes[col_t].values, df_mes[q_col_name].values)
+        data_upsampled[q_col_name] = df_mes_upsampled_q
+        logger.info(f"[Python] Standardized reactive column found and interpolated: {q_col_name}")
+    else:
+        # Fallback for manual uploads or partial data
+        col_q_guess = next((c for c in cols if 'reativa' in c.lower() or 'var' in c.lower()), None)
+        if col_q_guess:
+             nova_potencia_reativa = np.interp(novo_tempo, df_mes[col_t].values, df_mes[col_q_guess].values)
+             data_upsampled[q_col_name] = nova_potencia_reativa
+             logger.info(f"[Python] Guessed reactive column '{col_q_guess}' used as {q_col_name}")
+        else:
+             data_upsampled[q_col_name] = 0.0
+             logger.warning(f"No reactive column found (Standard: {q_col_name}). Defaulting to 0.0 VAr.")
+
+    df_mes_upsampled = pd.DataFrame(data_upsampled)
 
     return simular_soc_mes(
         df_mes=df_mes_upsampled,

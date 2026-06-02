@@ -193,13 +193,14 @@ def carregar_dados_mat(filename: str) -> Optional[pd.DataFrame]:
             df = pd.read_pickle(filename)
             # Padroniza nomes de colunas caso venha do Step 1 (Injeção)
             # O motor espera ('Tempo', 'Potencia_kW')
-            if 'Potencia_W' in df.columns:
+            if 'Potencia_Bateria_W' in df.columns and 'Potencia_kW' not in df.columns:
+                df['Potencia_kW'] = df['Potencia_Bateria_W'] / 1000.0
+            elif 'Potencia_W' in df.columns and 'Potencia_kW' not in df.columns:
                 df['Potencia_kW'] = df['Potencia_W'] / 1000.0
-                df = df[['Tempo', 'Potencia_kW']]
-            elif 'Potencia' in df.columns:
+            elif 'Potencia' in df.columns and 'Potencia_kW' not in df.columns:
                 df = df.rename(columns={'Potencia': 'Potencia_kW'})
                 
-            logger.info(f"Arquivo Pickle '{filename}' carregado com sucesso.")
+            logger.info(f"Arquivo Pickle '{filename}' carregado com sucesso. Colunas: {df.columns.tolist()}")
             return df
         except Exception as e:
             logger.error(f"Erro ao carregar arquivo Pickle '{filename}': {e}")

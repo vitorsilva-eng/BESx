@@ -325,24 +325,74 @@ def render_step_rules():
         time_col = st.session_state.get('ems_time_col') or df_res.columns[0]
         load_col = 'Carga_W'
         
+        # Garantir tipo datetime
+        df_res[time_col] = pd.to_datetime(df_res[time_col])
+        
         # Parâmetros de Ponta configurados
         p_used = st.session_state.get('ems_params_used', {})
         h_ini = p_used.get('hora_inic_descarga', 18)
         h_fim = p_used.get('hora_fim_descarga', 21)
         
-        analyzer = LoadAnalyzer(df_res, time_col, load_col)
-        # Reutilizamos a lista de feriados calculada anteriormente ou extraímos de algum lugar se necessário
-        # Para o diagnóstico rápido, usamos a lógica de feriados nacionais se não houver lista
-        metrics = analyzer.analyze(peak_start_hour=h_ini, peak_end_hour=h_fim, holidays_list=st.session_state.get('ems_holidays_list'))
+        # 1. Validação Crítica Baseada no Dataset Inteiro
+        analyzer_full = LoadAnalyzer(df_res, time_col, load_col)
+        metrics_full = analyzer_full.analyze(peak_start_hour=h_ini, peak_end_hour=h_fim, holidays_list=st.session_state.get('ems_holidays_list'))
         
-        st.markdown("### 🔍 Diagnóstico do Perfil de Carga")
-        
-        # Bloqueio Crítico: Duração < 24h
-        if metrics.duration_days < 0.99:
-            st.error(f"❌ **Dados Insuficientes:** A planilha possui apenas {metrics.duration_days:.2f} dias de dados. O sistema exige no mínimo 24h para realizar a expansão estatística e o dimensionamento.")
+        if metrics_full.duration_days < 0.99:
+            st.error(f"❌ **Dados Insuficientes:** A planilha possui apenas {metrics_full.duration_days:.2f} dias de dados. O sistema exige no mínimo 24h para realizar a expansão estatística e o dimensionamento.")
             st.warning("⚠️ O botão de 'Injetar para Simulação' permanecerá bloqueado até que uma planilha válida seja carregada.")
             st.stop() # Interrompe a renderização para os passos seguintes
             
+        st.markdown("### 🔍 Diagnóstico do Perfil de Carga")
+        
+        # 2. Filtro de Período para Exibição (Aesthetics Premium)
+        min_date = df_res[time_col].min().date()
+        max_date = df_res[time_col].max().date()
+        
+        st.markdown("""
+        <div style="background: rgba(0, 255, 204, 0.03); border: 1px solid rgba(0, 255, 204, 0.1); border-radius: 12px; padding: 15px; margin-bottom: 20px;">
+            <span style="color: #00ffcc; font-weight: bold; font-size: 14px;">📅 FILTRAGEM DE PERÍODO DE VISUALIZAÇÃO</span>
+            <p style="color: rgba(255, 255, 255, 0.6); font-size: 12px; margin: 5px 0 10px 0;">
+                Selecione o intervalo de datas abaixo para focar a análise visual nos gráficos e recalcular as métricas de diagnóstico em tempo real.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        c_f1, c_f2 = st.columns(2)
+        with c_f1:
+            data_ini = st.date_input(
+                "Data Inicial",
+                value=min_date,
+                min_value=min_date,
+                max_value=max_date,
+                key="ems_filter_date_ini"
+            )
+        with c_f2:
+            data_fim = st.date_input(
+                "Data Final",
+                value=max_date,
+                min_value=min_date,
+                max_value=max_date,
+                key="ems_filter_date_fim"
+            )
+            
+        if data_ini > data_fim:
+            st.error("⚠️ Erro: A Data Inicial não pode ser posterior à Data Final.")
+            st.stop()
+            
+        # Filtrar o DataFrame para os gráficos
+        df_plot = df_res[
+            (df_res[time_col].dt.date >= data_ini) & 
+            (df_res[time_col].dt.date <= data_fim)
+        ].copy()
+        
+        if df_plot.empty:
+            st.warning("⚠️ Período selecionado não contém dados. Exibindo período completo.")
+            df_plot = df_res.copy()
+            
+        # 3. Análise do Período Filtrado para KPIs Interativos
+        analyzer = LoadAnalyzer(df_plot, time_col, load_col)
+        metrics = analyzer.analyze(peak_start_hour=h_ini, peak_end_hour=h_fim, holidays_list=st.session_state.get('ems_holidays_list'))
+        
         t1, t2, t3, t4, t5 = st.tabs(["📊 Resumo Geral", "⚡ Ponta & Energia", "📅 Padrões", "⚡ Qualidade (PFC)", "⚙️ Diagnóstico"])
         
         with t1:
@@ -354,8 +404,8 @@ def render_step_rules():
             
             s_used = st.session_state.get('ems_strategy_used', "Load Shifting")
             limite_exibicao_w = (p_used.get('limite_demanda_kw', 0) if s_used in ["Load Shifting", "Combined (LS + PS)"] else p_used.get('peak_limit_kw', 0)) * 1000.0
-            st.plotly_chart(plot_ems_dispatch_comparison(df_res, time_col, limite_w=limite_exibicao_w), width='stretch', key="chart_dispatch_main")
-
+            st.plotly_chart(plot_ems_dispatch_comparison(df_plot, time_col, limite_w=limite_exibicao_w), width='stretch', key="chart_dispatch_main")
+ 
         with t2:
             c1, c2 = st.columns([1, 1])
             with c1:
@@ -367,25 +417,25 @@ def render_step_rules():
                 st.metric("Pico na Ponta", f"{metrics.p_max_ponta_w/1000:.1f} kW")
                 st.metric("Participação na Ponta", f"{metrics.pct_energy_ponta:.1%}")
                 st.info(f"Horário de Ponta considerado: {h_ini:02d}h às {h_fim:02d}h (Exceto Fins de Semana e Feriados).")
-                st.plotly_chart(plot_load_frequency_histogram(df_res, load_col), width='stretch', key="chart_load_hist")
-
+                st.plotly_chart(plot_load_frequency_histogram(df_plot, load_col), width='stretch', key="chart_load_hist")
+ 
         with t3:
-            st.plotly_chart(plot_load_heatmap(df_res, time_col, load_col), width='stretch', key="chart_load_heatmap")
+            st.plotly_chart(plot_load_heatmap(df_plot, time_col, load_col), width='stretch', key="chart_load_heatmap")
             st.caption("O mapa de calor acima mostra a média de consumo para cada hora do dia agrupada por dia da semana.")
-
-            st.plotly_chart(plot_energy_balance(df_res, time_col), width='stretch', key="chart_energy_balance_t3")
-
+ 
+            st.plotly_chart(plot_energy_balance(df_plot, time_col), width='stretch', key="chart_energy_balance_t3")
+ 
         with t4:
             st.subheader("⚡ Qualidade de Energia e Reativos")
             st.markdown("Análise da compensação de reativos e melhoria do Fator de Potência.")
             
             # Metrics for PF
-            p_adj = df_res['Carga_Ajustada_W']
-            q_adj = df_res['Carga_VAr'] + df_res.get('Potencia_Reativa_Bateria_VAr', 0.0)
+            p_adj = df_plot['Carga_Ajustada_W']
+            q_adj = df_plot['Carga_VAr'] + df_plot.get('Potencia_Reativa_Bateria_VAr', 0.0)
             s_adj = np.sqrt(p_adj**2 + q_adj**2)
             fp_adj = np.where(s_adj == 0, 1.0, p_adj / s_adj)
             
-            fp_min_orig = df_res['Carga_FP'].min()
+            fp_min_orig = df_plot['Carga_FP'].min() if 'Carga_FP' in df_plot.columns else 1.0
             fp_min_adj = fp_adj.min()
             
             m_q1, m_q2, m_q3 = st.columns(3)
@@ -394,9 +444,9 @@ def render_step_rules():
             
             target_pf = p_used.get('pf_target', 0.98) if s_used == "Power Factor Correction" else None
             
-            st.plotly_chart(plot_power_factor_comparison(df_res, time_col, pf_target=target_pf), width='stretch', key="chart_pfc_comparison")
-            st.plotly_chart(plot_reactive_power_comparison(df_res, time_col), width='stretch', key="chart_reactive_power")
-
+            st.plotly_chart(plot_power_factor_comparison(df_plot, time_col, pf_target=target_pf), width='stretch', key="chart_pfc_comparison")
+            st.plotly_chart(plot_reactive_power_comparison(df_plot, time_col), width='stretch', key="chart_reactive_power")
+ 
         with t5:
             q1, q2, q3 = st.columns(3)
             q1.metric("Intervalo (dT)", f"{metrics.dt_min:.1f} min")
@@ -406,7 +456,7 @@ def render_step_rules():
             if metrics.dt_min > 60:
                 st.warning("⚠️ Resolução baixa detectada (>60 min). Os cálculos de picos podem estar subestimados.")
             
-            st.plotly_chart(plot_energy_balance(df_res, time_col), width='stretch', key="chart_energy_balance_t5")
+            st.plotly_chart(plot_energy_balance(df_plot, time_col), width='stretch', key="chart_energy_balance_t5")
 
         st.markdown("---")
         

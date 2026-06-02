@@ -18,6 +18,7 @@ from besx.infrastructure.logging.logger import logger
 @njit
 def _simular_coulomb_numba(
     pot_w_arr: np.ndarray,
+    pot_var_arr: np.ndarray,
     tempos_min_arr: np.ndarray,
     soc_inicial: float,
     Ah: float,
@@ -70,13 +71,21 @@ def _simular_coulomb_numba(
         v_ocv_celula = np.interp(soc_out[k], soc_prof, curva_ocv_ativa)
         v_ocv_banco = v_ocv_celula * Ns
         
-        # Potência DC na Bateria
-        if p_ca_w > 0:
-            p_bateria_w = p_ca_w * rendimento_pcs
-        elif p_ca_w < 0:
-            p_bateria_w = p_ca_w / rendimento_pcs
-        else:
-            p_bateria_w = 0.0
+        # Potência CA Reativa (VAr)
+        p_var_w = pot_var_arr[k]
+        
+        # Potência Aparente CA (VA)
+        s_ca_va = np.sqrt(p_ca_w**2 + p_var_w**2)
+        
+        # Cálculo das Perdas do PCS baseadas na Potência Aparente (S)
+        # Se rendimento_pcs = 0.98, perdas = S * 0.02
+        perdas_pcs_w = s_ca_va * (1.0 - rendimento_pcs)
+        
+        # Potência DC na Bateria (Watts)
+        # Convenção: P > 0 (Carga), P < 0 (Descarga)
+        # As perdas sempre reduzem a potência que entra na bateria (carga) 
+        # ou aumentam a potência que sai da bateria (descarga).
+        p_bateria_w = p_ca_w - perdas_pcs_w
             
         # Cálculo da Corrente (Rint Model)
         if rs_banco > 0.0:
@@ -148,10 +157,20 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
     cols = df_mes.columns.tolist()
     col_t = next((c for c in cols if 'tempo' in c.lower() or 'timestamp' in c.lower()), cols[0])
     col_p = next((c for c in cols if 'pot' in c.lower() and c != col_t), cols[1] if len(cols)>1 else cols[0])
+    
+    # Busca coluna de Reativos (VAr)
+    col_q = next((c for c in cols if 'reativa' in c.lower() or 'var' in c.lower()), None)
 
     pot_raw_arr = df_mes[col_p].astype(float).values
     tempos_min_arr = df_mes[col_t].astype(float).values
     
+    if col_q:
+        pot_var_arr = df_mes[col_q].astype(float).values
+        logger.info(f"[Simulator] Coluna reativa detectada: {col_q} | Max VAr: {np.max(np.abs(pot_var_arr)):.1f}")
+    else:
+        pot_var_arr = np.zeros_like(pot_raw_arr)
+        logger.info("[Simulator] Nenhuma coluna reativa detectada. Usando zero VAr.")
+
     if 'kw' in col_p.lower():
         pot_w_arr = pot_raw_arr * 1000.0
     else:
@@ -174,7 +193,7 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
 
     # Chamada do Motor Compilado
     soc_out, corrente_out, tensao_term_out, pot_ca_out = _simular_coulomb_numba(
-        pot_w_arr, tempos_min_arr, soc_inicial, cfg_bat.Ah, soh_atual,
+        pot_w_arr, pot_var_arr, tempos_min_arr, soc_inicial, cfg_bat.Ah, soh_atual,
         rs_banco, cfg_bat.Ns, cfg_bat.Np, n_unidades,
         v_max_banco, v_min_banco, cfg_bat.soc_min, cfg_bat.soc_max,
         float(cfg_bat.P_bess), cfg_bat.rendimento_pcs,
