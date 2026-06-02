@@ -166,11 +166,50 @@ class EMSManager:
         # Ensure median dt works for calculation
         dt_val = dt_median if pd.notna(dt_median) else 1.0
 
-        # REQ-08: Explicit unit conversion (No more guessing based on strings)
-        # Power calculation: P_w = (Energy_wh) / dt_h
-        # We assume the user has selected the column and told us what it represents in the UI (load_col).
-        # Internal normalization to 'Carga_W'
-        df['Carga_W'] = df[load_col]
+        # REQ-08: Explicit unit conversion & Heuristic energy/power scale detection
+        raw_values = df[load_col].values
+        
+        # Heuristic detection of energy (kWh/Wh) columns
+        col_name_lower = str(load_col).lower()
+        is_energy_name = any(x in col_name_lower for x in ['kwh', 'wh', 'energia', 'energy'])
+        
+        # If values are unusually small for Watts in commercial buildings (e.g. max value < 5000)
+        # and there is a datetime step dt, it is highly likely to be energy (kWh or Wh)
+        is_suspiciously_small = np.max(raw_values) < 5000.0
+        
+        is_energy_detected = is_energy_name or is_suspiciously_small
+        
+        # User manual override from kwargs
+        user_specified_energy = kwargs.get('is_energy', False)
+        
+        if user_specified_energy or is_energy_detected:
+            # Determine if values are in kWh or Wh. 
+            is_kwh = True
+            if np.max(raw_values) > 1000000.0: # If huge, might be Wh
+                is_kwh = False
+                
+            multiplier = 1000.0 if is_kwh else 1.0
+            
+            # Power (W) = Energy (Wh) / dt (hours)
+            df['Carga_W'] = (raw_values * multiplier) / dt_val
+            
+            msg = f"REQ-08: Auto-conversion of energy column '{load_col}' to Power (W) applied using dt={dt_val:.4f}h."
+            if is_energy_detected and not user_specified_energy:
+                msg += " (Heuristic detection triggered due to small value magnitude or column name)."
+            logger.warning(msg)
+            
+            # Save conversion status back into DataFrame attributes so UI can access it
+            df.attrs['conversion_applied'] = True
+            df.attrs['conversion_msg'] = msg
+        else:
+            # Check if values are likely in kW (e.g., peak load is < 2000 for a large dataset).
+            is_kw_detected = np.max(raw_values) < 2000.0
+            if is_kw_detected:
+                df['Carga_W'] = raw_values * 1000.0
+                logger.warning(f"REQ-08: Auto-scaling active power column '{load_col}' from kW to Watts.")
+                df.attrs['scaling_applied'] = True
+            else:
+                df['Carga_W'] = raw_values
         
         # --- OPTIONAL REACTIVE DATA PROCESSING ---
         if q_col and q_col in df.columns:

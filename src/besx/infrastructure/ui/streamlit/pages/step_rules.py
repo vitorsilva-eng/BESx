@@ -115,6 +115,7 @@ def render_step_rules():
                 unit_type = st.radio("Unidade original", ["Potência (W/kW)", "Energia (Wh/kWh)"], index=0, horizontal=True)
                 
                 # Save column choices
+                st.session_state.ems_unit_type = unit_type
                 st.session_state.ems_time_col = time_col
                 st.session_state.ems_load_col = load_col
                 st.session_state.ems_fp_col = None if fp_col == "Nenhum" else fp_col
@@ -295,6 +296,9 @@ def render_step_rules():
                     kwargs['q_col'] = st.session_state.ems_q_col
                 if st.session_state.get('ems_va_col'):
                     kwargs['va_col'] = st.session_state.ems_va_col
+                
+                # Pass energy unit conversion flag
+                kwargs['is_energy'] = (st.session_state.get('ems_unit_type') == "Energia (Wh/kWh)")
 
                 df_result = ems_manager.run(df_full, time_col=time_col, load_col=load_col, **kwargs)
                 st.session_state.ems_preview_result = df_result
@@ -310,6 +314,12 @@ def render_step_rules():
     if st.session_state.get('ems_preview_result') is not None:
         df_res = st.session_state.ems_preview_result
         
+        # REQ-08 UI Warning for auto-conversion or auto-scaling
+        if getattr(df_res, 'attrs', {}).get('conversion_applied'):
+            st.warning(f"⚠️ **Conversão de Unidade Automática (REQ-08):** Detectamos que a coluna '{st.session_state.ems_load_col}' continha valores em formato de Energia. O sistema converteu automaticamente para Potência média em Watts (W) baseando-se no intervalo temporal (dt).")
+        elif getattr(df_res, 'attrs', {}).get('scaling_applied'):
+            st.warning(f"⚠️ **Escalonamento Automático (REQ-08):** Detectamos que a coluna '{st.session_state.ems_load_col}' continha valores em formato de kW. O sistema escalonou automaticamente os valores para Watts (W) para garantir a precisão física do simulador.")
+
         # --- NOVO: ANALISADOR DE CARGA (DIAGNÓSTICO AVANÇADO) ---
         time_col = st.session_state.get('ems_time_col') or df_res.columns[0]
         load_col = 'Carga_W'
