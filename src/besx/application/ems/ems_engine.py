@@ -174,3 +174,109 @@ class BessEMS:
         
         logger.info("Cálculo de correção de fator de potência finalizado.")
         return df_out
+
+    def gerar_perfil_combinado_ls_ps(
+        self,
+        df_carga: pd.DataFrame,
+        limite_demanda_kw: float,
+        hora_inicio_carga: int,
+        hora_fim_carga: int,
+        hora_inicio_descarga: int,
+        hora_fim_descarga: int,
+        faixa_seguranca_kw: float = 0.0,
+        faixa_seguranca_pct: float = 0.0,
+        ignorar_fins_de_semana: bool = True,
+        feriados: Optional[list] = None,
+        coluna_tempo: str = 'Time',
+        coluna_carga: str = 'Load_W'
+    ) -> pd.DataFrame:
+        """
+        Aplica de forma vetorizada o despacho combinado de Peak Shaving e Load Shifting.
+        
+        O Peak Shaving (limite de demanda) possui prioridade absoluta sobre o 
+        Load Shifting (deslocamento de carga por horário de ponta).
+        
+        Args:
+            df_carga: DataFrame contendo a telemetria.
+            limite_demanda_kw: Limite de demanda contratada/alvo (kW).
+            hora_inicio_carga: Hora de início de carregamento (0-23).
+            hora_fim_carga: Hora de término de carregamento (0-23).
+            hora_inicio_descarga: Hora de início de descarregamento na ponta (0-23).
+            hora_fim_descarga: Hora de término de descarregamento na ponta (0-23).
+            faixa_seguranca_kw: Faixa de segurança absoluta (kW) subtraída do limite.
+            faixa_seguranca_pct: Faixa de segurança percentual (%) subtraída do limite.
+            ignorar_fins_de_semana: Se True, desativa Load Shifting aos sábados e domingos.
+            feriados: Lista opcional de feriados em formato datetime/date para desativar Load Shifting.
+            coluna_tempo: Nome da coluna de tempo.
+            coluna_carga: Nome da coluna de consumo ativo.
+            
+        Returns:
+            DataFrame contendo coluna_tempo e Potencia_Bateria_W.
+        """
+        # 1. Calcular Limite Efetivo de Demanda (Peak Shaving) em Watts
+        limite_efetivo_kw = limite_demanda_kw - faixa_seguranca_kw
+        if faixa_seguranca_pct > 0:
+            limite_efetivo_kw -= (limite_demanda_kw * (faixa_seguranca_pct / 100.0))
+        limite_demanda_w = limite_efetivo_kw * 1000.0
+        
+        logger.info(f"Iniciando EMS Combinado (LS + PS). Limite Efetivo: {limite_efetivo_kw}kW.")
+        
+        df = df_carga.copy()
+        
+        # 2. Formatação defensiva da coluna de tempo para obter metadados horários e de calendário
+        if not pd.api.types.is_datetime64_any_dtype(df[coluna_tempo]):
+            df['datetime_temp'] = pd.to_datetime(df[coluna_tempo])
+        else:
+            df['datetime_temp'] = df[coluna_tempo]
+            
+        horas = df['datetime_temp'].dt.hour
+        dias_semana = df['datetime_temp'].dt.dayofweek
+        datas = df['datetime_temp'].dt.date
+        
+        # 3. Determinar dias inválidos para Load Shifting (finais de semana e feriados)
+        dias_invalidos = np.zeros(len(df), dtype=bool)
+        if ignorar_fins_de_semana:
+            dias_invalidos = dias_invalidos | (dias_semana >= 5)  # 5=Sábado, 6=Domingo
+        if feriados:
+            feriados_dates = pd.to_datetime(feriados).dt.date if isinstance(feriados, pd.Series) else pd.to_datetime(feriados).date
+            dias_invalidos = dias_invalidos | datas.isin(feriados_dates)
+            
+        carga_w = df[coluna_carga].values
+        potencia_bat_w = np.zeros(len(df))
+        
+        # 4. Criar máscaras das janelas de tempo de Load Shifting
+        if hora_inicio_carga < hora_fim_carga:
+            is_carga = (horas >= hora_inicio_carga) & (horas < hora_fim_carga)
+        else:
+            is_carga = (horas >= hora_inicio_carga) | (horas < hora_fim_carga)
+            
+        if hora_inicio_descarga < hora_fim_descarga:
+            is_descarga = (horas >= hora_inicio_descarga) & (horas < hora_fim_descarga)
+        else:
+            is_descarga = (horas >= hora_inicio_descarga) | (horas < hora_fim_descarga)
+            
+        # 5. Algoritmo Combinado Vetorizado:
+        # Cenário A: Carga > Limite Demanda -> PEAK SHAVING ATUA (Descarrega excesso, Prioridade Máxima)
+        mask_peak = (carga_w > limite_demanda_w)
+        potencia_bat_w[mask_peak] = limite_demanda_w - carga_w[mask_peak]
+        
+        # Cenário B: Carga <= Limite Demanda -> Ações do Load Shifting se o dia for válido:
+        # B.1: Janela de descarga (Horário de Ponta) -> Descarrega para suprir a carga do cliente
+        mask_descarga_valid = (~mask_peak) & is_descarga & (~dias_invalidos)
+        potencia_bat_w[mask_descarga_valid] = -carga_w[mask_descarga_valid]
+        
+        # B.2: Janela de carga (Horário de Fora de Ponta) -> Recarrega usando a folga da demanda
+        mask_carga_valid = (~mask_peak) & is_carga & (~dias_invalidos)
+        folga_demanda = limite_demanda_w - carga_w
+        potencia_bat_w[mask_carga_valid] = np.maximum(0.0, folga_demanda[mask_carga_valid])
+        
+        # B.3: Período ocioso (Idle) ou dias inválidos (sem picos) -> Potência permanece zero
+        
+        df_out = pd.DataFrame({
+            coluna_tempo: df[coluna_tempo],
+            'Potencia_Bateria_W': potencia_bat_w
+        })
+        
+        logger.info("Cálculo de Despacho Combinado finalizado.")
+        return df_out
+

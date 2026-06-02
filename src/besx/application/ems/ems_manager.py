@@ -4,6 +4,7 @@ import numpy as np
 from typing import List
 from besx.application.ems.ems_engine import BessEMS
 from besx.infrastructure.logging.logger import logger
+from besx.config import CONFIGURACAO
 
 class BaseStrategy(ABC):
     """Abstract Base Class for EMS Strategies."""
@@ -81,6 +82,29 @@ class PowerFactorCorrectionStrategy(BaseStrategy):
         return df_out
 
 
+class CombinedStrategyLSPS(BaseStrategy):
+    """Wrapper for the Combined Load Shifting & Peak Shaving algorithm."""
+    
+    def execute(self, df_carga: pd.DataFrame, bess_ems: BessEMS, **kwargs) -> pd.DataFrame:
+        col_tempo = kwargs.get('time_col', 'Time')
+        col_carga = kwargs.get('load_col', 'Carga_W')
+        
+        df_out = bess_ems.gerar_perfil_combinado_ls_ps(
+            df_carga=df_carga,
+            limite_demanda_kw=kwargs.get('limite_demanda_kw', 0.0),
+            hora_inicio_carga=kwargs.get('hora_inicio_carga', 0),
+            hora_fim_carga=kwargs.get('hora_fim_carga', 0),
+            hora_inicio_descarga=kwargs.get('hora_inicio_descarga', 0),
+            hora_fim_descarga=kwargs.get('hora_fim_descarga', 0),
+            faixa_seguranca_kw=kwargs.get('faixa_seguranca_kw', 0.0),
+            faixa_seguranca_pct=kwargs.get('faixa_seguranca_pct', 0.0),
+            ignorar_fins_de_semana=kwargs.get('ignorar_fins_de_semana', True),
+            feriados=kwargs.get('feriados', None),
+            coluna_tempo=col_tempo,
+            coluna_carga=col_carga
+        )
+        return df_out
+
 
 class EMSManager:
     """
@@ -95,7 +119,7 @@ class EMSManager:
         self.bess_ems = BessEMS()
         self.s_inversor_va = s_inversor_va if s_inversor_va is not None else self.p_bess_max_w
         
-    def validate_and_prepare_input(self, df: pd.DataFrame, time_col: str, load_col: str) -> pd.DataFrame:
+    def validate_and_prepare_input(self, df: pd.DataFrame, time_col: str, load_col: str, fp_col: str = None, q_col: str = None, va_col: str = None) -> pd.DataFrame:
         """
         Validates the input DataFrame following strict rules (REQ-04 to REQ-08).
         
@@ -103,6 +127,9 @@ class EMSManager:
             df: Raw input DataFrame.
             time_col: Name of the datetime column.
             load_col: Name of the load column.
+            fp_col: Optional column name for Power Factor.
+            q_col: Optional column name for Reactive Power (kVARh).
+            va_col: Optional column name for Apparent Power (kVAh).
             
         Returns:
             Validated and standard-formatted DataFrame.
@@ -139,26 +166,26 @@ class EMSManager:
         # Ensure median dt works for calculation
         dt_val = dt_median if pd.notna(dt_median) else 1.0
 
-        # REQ-08: kWh Inference heuristics
-        # If mean values are around what would be the integral (Ah-throughput * dt / hours)
-        # Assuming maximum powers in standard datasets vs integrated values
-        # e.g.: If values are typical to Energy rather than Power (Values * dt ~ Power?) Let's be explicit and careful:
-        # A simple check: if the user passes 'kW' but the magnitude is suspiciously low compared to 'kWh=kW*h',
-        # However, a robust proxy is checking if `load_col` string has `kWh` in its name.
-        if 'kwh' in str(load_col).lower():
-            # If explicit that it's energy, auto convert
-            logger.warning(f"Detected explicit kWh column '{load_col}'. Converting to kW using dt={dt_val:.4f}h.")
-            df[load_col] = df[load_col] / dt_val
-        elif df[load_col].mean() < (self.p_bess_max_w / 1000) * 0.1 and dt_val < 0.5:
-             # Just a structural heuristic. We'll leave the robust conversion explicit.
-             pass
-             
-        # Add basic mapping to 'Carga_W' if it doesn't exist
-        if 'Carga_W' not in df.columns:
-            if 'kw' in str(load_col).lower():
-                df['Carga_W'] = df[load_col] * 1000
-            else:
-                 df['Carga_W'] = df[load_col]
+        # REQ-08: Explicit unit conversion (No more guessing based on strings)
+        # Power calculation: P_w = (Energy_wh) / dt_h
+        # We assume the user has selected the column and told us what it represents in the UI (load_col).
+        # Internal normalization to 'Carga_W'
+        df['Carga_W'] = df[load_col]
+        
+        # --- OPTIONAL REACTIVE DATA PROCESSING ---
+        if q_col and q_col in df.columns:
+            # Assume kVARh (Energy) -> Convert to VAr (Power)
+            df['Carga_VAr'] = (df[q_col] * 1000.0) / dt_val
+            logger.info(f"Processed reactive column '{q_col}' as VAr using dt={dt_val:.4f}h.")
+        
+        if va_col and va_col in df.columns:
+            # Assume kVAh (Energy) -> Convert to VA (Power)
+            df['Carga_VA'] = (df[va_col] * 1000.0) / dt_val
+            logger.info(f"Processed apparent column '{va_col}' as VA using dt={dt_val:.4f}h.")
+
+        if fp_col and fp_col in df.columns:
+            df['Carga_FP'] = pd.to_numeric(df[fp_col], errors='coerce').fillna(1.0)
+            logger.info(f"Using column '{fp_col}' as Carga_FP.")
             
         # Power Triangle Inference
         has_fp = 'Carga_FP' in df.columns
@@ -187,9 +214,14 @@ class EMSManager:
             if not has_fp:
                 df['Carga_FP'] = np.where(va == 0, 1.0, w / va)
         else:
-            df['Carga_VAr'] = 0.0
-            df['Carga_VA'] = w
-            df['Carga_FP'] = 1.0
+            # If no column was explicitly selected but we found a standard name earlier, use it
+            # Otherwise default to zero
+            if 'Carga_VAr' not in df.columns:
+                df['Carga_VAr'] = 0.0
+            if 'Carga_VA' not in df.columns:
+                df['Carga_VA'] = df['Carga_W']
+            if 'Carga_FP' not in df.columns:
+                df['Carga_FP'] = 1.0
             
         return df
 
@@ -201,13 +233,21 @@ class EMSManager:
             df_carga: Raw input DataFrame.
             time_col: Name of datetime column.
             load_col: Name of load column.
+            fp_col: Optional column name for Power Factor.
+            q_col: Optional column name for Reactive Power (kVARh).
             soc_inicial: Initial SOC in percentage (0 to 100). Default is 50.0.
             
         Returns:
             DataFrame with `Potencia_Bateria_W`, heuristic `SOC_Heuristico`, and other metrics.
         """
         # Step 1: Validation and Standardization
-        df_processed = self.validate_and_prepare_input(df_carga.copy(), time_col, load_col)
+        df_processed = self.validate_and_prepare_input(
+            df_carga.copy(), 
+            time_col, 
+            load_col, 
+            fp_col=kwargs.get('fp_col'), 
+            q_col=kwargs.get('q_col')
+        )
         
         # Initialize Potencia_Bateria_W to 0 conceptually (no dispatch) if not present
         if 'Potencia_Bateria_W' not in df_processed.columns:
@@ -244,12 +284,20 @@ class EMSManager:
         
         for i in range(1, len(df_processed)):
             dt_h = dts_hours.iloc[i]
-            potencia_w = df_processed['Potencia_Bateria_W'].iloc[i]
+            potencia_ativa_w = df_processed['Potencia_Bateria_W'].iloc[i]
+            potencia_reativa_var = df_processed.get('Potencia_Reativa_Bateria_VAr', pd.Series(0.0, index=df_processed.index)).iloc[i]
+            
+            # Cálculo de Potência Aparente e Perdas Estimadas (Heurístico)
+            s_va = np.sqrt(potencia_ativa_w**2 + potencia_reativa_var**2)
+            rendimento = getattr(CONFIGURACAO.bateria, 'rendimento_pcs', 0.88)
+            perdas_w = s_va * (1.0 - rendimento)
+            
+            # Potência Total DC (Convenção: P > 0 Carga, P < 0 Descarga)
+            # As perdas sempre aumentam a descarga ou diminuem a carga.
+            potencia_total_dc_w = potencia_ativa_w - perdas_w
             
             # Integral: Energy[t] = Energy[t-1] + (Power[t] * dt)
-            # (Convention: Positive Power = Charge = Increases Energy)
-            # Since Power is in Watts, we divide by 1000 for kWh
-            delta_kwh = (potencia_w * dt_h) / 1000.0
+            delta_kwh = (potencia_total_dc_w * dt_h) / 1000.0
             new_energy_kwh = energy_wh[-1] + delta_kwh
             energy_wh.append(new_energy_kwh)
             
