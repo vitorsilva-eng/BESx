@@ -79,8 +79,9 @@ class BessEMS:
             is_descarga = (horas >= hora_inicio_descarga) | (horas < hora_fim_descarga)
             
         # Ação de Carga (Sinal Positivo = Bateria agindo como Carga/Consumidor)
+        # BESS charging is allowed on weekends/holidays to restore SOC and perform peak shaving
         folga_demanda = limite_demanda_w - carga_w
-        mask_carga = is_carga & (folga_demanda > 0) & (~dias_invalidos)
+        mask_carga = is_carga & (folga_demanda > 0)
         potencia_bat_w[mask_carga] = folga_demanda[mask_carga]
         
         # Ação de Descarga (Sinal Negativo = Bateria agindo como Gerador)
@@ -266,7 +267,8 @@ class BessEMS:
         potencia_bat_w[mask_descarga_valid] = -carga_w[mask_descarga_valid]
         
         # B.2: Janela de carga (Horário de Fora de Ponta) -> Recarrega usando a folga da demanda
-        mask_carga_valid = (~mask_peak) & is_carga & (~dias_invalidos)
+        # BESS charging is allowed on weekends/holidays to restore SOC and perform peak shaving
+        mask_carga_valid = (~mask_peak) & is_carga
         folga_demanda = limite_demanda_w - carga_w
         potencia_bat_w[mask_carga_valid] = np.maximum(0.0, folga_demanda[mask_carga_valid])
         

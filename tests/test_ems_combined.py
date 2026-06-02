@@ -11,18 +11,20 @@ def test_combined_ems_priority_and_logic():
     1. Peak Shaving takes priority over Load Shifting at all times.
     2. Headroom capacity for charging is respected in charging windows.
     3. Normal Load Shifting discharges in peak windows.
-    4. Weekends and holidays disable Load Shifting but NOT Peak Shaving.
+    4. Weekends and holidays disable Load Shifting discharge but NOT Peak Shaving.
+    5. Charging is allowed on weekends/holidays to restore SOC for peak shaving.
     """
     bess_ems = BessEMS()
     
     # 1. Create telemetry DataFrame
     # 2026-06-01 is a Monday (Weekday)
-    # We will test 4 key timestamps:
+    # We will test 6 key timestamps:
     # t0: 02:00 (Weekday, Inside charge window, load = 60kW, limit = 100kW) -> Should charge at +40kW (headroom)
     # t1: 12:00 (Weekday, Idle window, load = 150kW, limit = 100kW) -> Should discharge at -50kW (peak shaving)
     # t2: 19:00 (Weekday, Inside discharge window, load = 80kW, limit = 100kW) -> Should discharge at -80kW (load shifting)
     # t3: 12:00 (Saturday 2026-06-06, Idle window, load = 150kW, limit = 100kW) -> Should discharge at -50kW (peak shaving on weekend)
-    # t4: 19:00 (Saturday 2026-06-06, Inside discharge window, load = 80kW, limit = 100kW) -> Should be IDLE 0kW (no arbitrage on weekend)
+    # t4: 19:00 (Saturday 2026-06-06, Inside discharge window, load = 80kW, limit = 100kW) -> Should be IDLE 0kW (no arbitrage discharge on weekend)
+    # t5: 02:00 (Saturday 2026-06-06, Inside charge window, load = 60kW, limit = 100kW) -> Should charge at +40kW (charging allowed on weekend)
     
     timestamps = [
         datetime(2026, 6, 1, 2, 0, 0),
@@ -30,6 +32,7 @@ def test_combined_ems_priority_and_logic():
         datetime(2026, 6, 1, 19, 0, 0),
         datetime(2026, 6, 6, 12, 0, 0),
         datetime(2026, 6, 6, 19, 0, 0),
+        datetime(2026, 6, 6, 2, 0, 0),
     ]
     
     loads_w = [
@@ -37,7 +40,8 @@ def test_combined_ems_priority_and_logic():
         150000.0,
         80000.0,
         150000.0,
-        80000.0
+        80000.0,
+        60000.0
     ]
     
     df_carga = pd.DataFrame({
@@ -83,6 +87,9 @@ def test_combined_ems_priority_and_logic():
     
     # t4: 19:00 Saturday -> Idle on weekend discharge window (0kW)
     assert np.isclose(powers[4], 0.0), f"Expected 0kW (idle) on Saturday discharge window, got {powers[4]/1000}kW"
+    
+    # t5: 02:00 Saturday -> Charge with headroom on weekend (100kW - 60kW = 40kW)
+    assert np.isclose(powers[5], 40000.0), f"Expected 40kW charge on Saturday charge window, got {powers[5]/1000}kW"
 
 def test_ems_manager_unit_conversions():
     """
