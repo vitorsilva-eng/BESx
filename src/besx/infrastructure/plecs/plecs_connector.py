@@ -146,6 +146,11 @@ def _run_python(
 
     df_mes_upsampled = pd.DataFrame(data_upsampled)
 
+    # Interpola colunas adicionais de entrada (Carga_W e Potencia_W) para o simulador
+    for col in ['Carga_W', 'Potencia_W']:
+        if col in df_mes.columns:
+            df_mes_upsampled[col] = np.interp(novo_tempo, df_mes[col_t].values, df_mes[col].values)
+
     return simular_soc_mes(
         df_mes=df_mes_upsampled,
         soh_atual=soh_atual,
@@ -282,6 +287,12 @@ def _run_plecs(
         # Check robusto: se o valor máximo for > 1.1, dividimos por 100.
         if df_soc_mes['SOC'].max() > 1.1:
             df_soc_mes['SOC'] = df_soc_mes['SOC'] / 100.0
+            
+        # Interpola colunas adicionais para o vetor de tempo do PLECS
+        for col in ['Carga_W', 'Potencia_W']:
+            if col in df_mes.columns:
+                tempo_segundos = df_mes[col_t].values * 60.0
+                df_soc_mes[col] = np.interp(df_soc_mes['Tempo'].values, tempo_segundos, df_mes[col].values)
         
         return df_soc_mes
         

@@ -348,27 +348,15 @@ def ajustar_duracao_dados(df: pd.DataFrame, dt_minutos: float, meses_alvo: Optio
     if linhas_alvo > total_linhas_atual:
         logger.info(f"-> Expandindo dados para {meses_finais} meses (Repetição cíclica)...")
         
-        # 1. Repetir os valores de potência
         # Calculamos quantas cópias inteiras precisamos + sobra
         repeticoes = math.ceil(linhas_alvo / total_linhas_atual)
         
-        # Repete o array de potência
-        valores_potencia = df[col_valor].values
-        novo_array_potencia = np.tile(valores_potencia, repeticoes)
+        # Cria um novo DataFrame repetindo as linhas do original de forma ciclica
+        df_novo = pd.concat([df] * repeticoes, ignore_index=True).iloc[:linhas_alvo].copy()
         
-        # Corta o excesso para ficar exato
-        novo_array_potencia = novo_array_potencia[:linhas_alvo]
-        
-        # 2. Reconstruir o vetor de Tempo (Fundamental!)
-        # O tempo deve continuar crescendo: 0, 5, 10, ..., N
+        # Recontrói o vetor de Tempo crescente para evitar duplicidade de tempo
         tempo_inicial = df[col_tempo].iloc[0]
-        novo_array_tempo = np.arange(0, linhas_alvo) * dt_minutos + tempo_inicial
-        
-        # 3. Montar novo DataFrame
-        df_novo = pd.DataFrame({
-            col_tempo: novo_array_tempo,
-            col_valor: novo_array_potencia
-        })
+        df_novo[col_tempo] = np.arange(0, linhas_alvo) * dt_minutos + tempo_inicial
         
         return df_novo
 

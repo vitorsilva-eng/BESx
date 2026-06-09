@@ -6,6 +6,9 @@ import sys
 src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
+project_root = os.path.abspath(os.path.join(src_path, '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # --- Internal Imports ---
 from besx.config import CONFIGURACAO
@@ -136,22 +139,22 @@ st.sidebar.markdown("---")
 # --- Step Dispatcher ---
 selected_step = st.session_state.nav_step
 
-if "1. Regras" in selected_step:
+if "1." in selected_step:
     from besx.infrastructure.ui.streamlit.pages.step_rules import render_step_rules
     render_step_rules()
-elif "2. Escolha" in selected_step:
+elif "2." in selected_step:
     from besx.infrastructure.ui.streamlit.pages.step_battery import render_step_battery
     render_step_battery()
-elif "3. Simulação" in selected_step:
+elif "3." in selected_step:
     from besx.infrastructure.ui.streamlit.pages.step_simulation import render_step_simulation
     render_step_simulation()
-elif "4. Resultados" in selected_step:
+elif "4." in selected_step:
     from besx.infrastructure.ui.streamlit.pages.step_results import render_step_results
     render_step_results()
-elif "5. Comparativo" in selected_step:
+elif "5." in selected_step:
     from besx.infrastructure.ui.streamlit.pages.step_comparison import render_step_comparison
     render_step_comparison()
-elif "6. Configurações" in selected_step:
+elif "6." in selected_step:
     from besx.infrastructure.ui.streamlit.pages.step_settings import render_step_settings
     render_step_settings()
 

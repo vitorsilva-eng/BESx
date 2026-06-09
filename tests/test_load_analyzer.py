@@ -31,6 +31,16 @@ def test_load_analyzer_basic_metrics():
     # 4. Ponta
     assert metrics.energy_ponta_kwh == 6.0
     assert abs(metrics.pct_energy_ponta - (6.0 / 48.0)) < 0.0001
+    
+    # 5. Novas Métricas de Ponta Diárias
+    assert metrics.daily_energy_peak_mean == 3.0
+    assert metrics.daily_energy_peak_max == 3.0
+    assert metrics.daily_energy_peak_p95 == 3.0
+    assert metrics.power_peak_max_w == 1000.0
+    assert metrics.power_peak_mean_w == 1000.0
+    assert metrics.power_peak_p95_w == 1000.0
+    assert not metrics.df_daily_peak.empty
+    assert len(metrics.df_daily_peak) == 2
 
 def test_load_analyzer_duration_block():
     # Only 10 points (2.5 hours)

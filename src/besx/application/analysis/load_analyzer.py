@@ -31,6 +31,17 @@ class LoadMetrics:
     energy_ponta_kwh: float
     energy_fora_ponta_kwh: float
     pct_energy_ponta: float
+    
+    # Estatísticas de Energia e Potência Diária na Ponta
+    daily_energy_peak_mean: float
+    daily_energy_peak_max: float
+    daily_energy_peak_p95: float
+    daily_energy_peak_p90: float
+    daily_energy_peak_std: float
+    power_peak_max_w: float
+    power_peak_mean_w: float
+    power_peak_p95_w: float
+    df_daily_peak: pd.DataFrame
 
 class LoadAnalyzer:
     """
@@ -110,6 +121,39 @@ class LoadAnalyzer:
         e_ponta = (df_ponta[self.load_col].sum() * (dt_median / 60.0)) / 1000.0
         e_fora_ponta = (df_fora_ponta[self.load_col].sum() * (dt_median / 60.0)) / 1000.0
         pct_ponta = e_ponta / total_energy_kwh if total_energy_kwh > 0 else 0.0
+
+        # Análise detalhada diária do horário de ponta
+        df_temp['is_peak'] = mask_ponta
+        df_peak_only = df_temp[mask_ponta].copy()
+        
+        if not df_peak_only.empty:
+            df_peak_only['energy_kwh'] = (df_peak_only[self.load_col] * (dt_median / 60.0)) / 1000.0
+            
+            df_daily_peak = df_peak_only.groupby('date').agg(
+                energy_peak_kwh=('energy_kwh', 'sum'),
+                power_max_peak_w=(self.load_col, 'max'),
+                power_avg_peak_w=(self.load_col, 'mean')
+            ).reset_index()
+            
+            daily_energy_peak_mean = float(df_daily_peak['energy_peak_kwh'].mean())
+            daily_energy_peak_max = float(df_daily_peak['energy_peak_kwh'].max())
+            daily_energy_peak_p95 = float(np.percentile(df_daily_peak['energy_peak_kwh'], 95))
+            daily_energy_peak_p90 = float(np.percentile(df_daily_peak['energy_peak_kwh'], 90))
+            daily_energy_peak_std = float(df_daily_peak['energy_peak_kwh'].std()) if len(df_daily_peak) > 1 else 0.0
+            
+            power_peak_max_w = float(df_daily_peak['power_max_peak_w'].max())
+            power_peak_mean_w = float(df_daily_peak['power_avg_peak_w'].mean())
+            power_peak_p95_w = float(np.percentile(df_daily_peak['power_max_peak_w'], 95))
+        else:
+            df_daily_peak = pd.DataFrame(columns=['date', 'energy_peak_kwh', 'power_max_peak_w', 'power_avg_peak_w'])
+            daily_energy_peak_mean = 0.0
+            daily_energy_peak_max = 0.0
+            daily_energy_peak_p95 = 0.0
+            daily_energy_peak_p90 = 0.0
+            daily_energy_peak_std = 0.0
+            power_peak_max_w = 0.0
+            power_peak_mean_w = 0.0
+            power_peak_p95_w = 0.0
         
         return LoadMetrics(
             dt_min=dt_median,
@@ -128,5 +172,14 @@ class LoadAnalyzer:
             p_max_ponta_w=p_max_ponta,
             energy_ponta_kwh=e_ponta,
             energy_fora_ponta_kwh=e_fora_ponta,
-            pct_energy_ponta=pct_ponta
+            pct_energy_ponta=pct_ponta,
+            daily_energy_peak_mean=daily_energy_peak_mean,
+            daily_energy_peak_max=daily_energy_peak_max,
+            daily_energy_peak_p95=daily_energy_peak_p95,
+            daily_energy_peak_p90=daily_energy_peak_p90,
+            daily_energy_peak_std=daily_energy_peak_std,
+            power_peak_max_w=power_peak_max_w,
+            power_peak_mean_w=power_peak_mean_w,
+            power_peak_p95_w=power_peak_p95_w,
+            df_daily_peak=df_daily_peak
         )

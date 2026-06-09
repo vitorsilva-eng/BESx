@@ -208,6 +208,11 @@ def simular_soc_mes(df_mes: pd.DataFrame, soh_atual: float, soc_inicial: float, 
         'Potencia_CA_kW': pot_ca_out / 1000.0
     })
     
+    # Copy additional input columns if they are present in df_mes
+    for col in ['Carga_W', 'Potencia_W']:
+        if col in df_mes.columns:
+            df_resultado[col] = df_mes[col].values
+            
     return df_resultado
 
 def picos_e_vales(profile_series: pd.Series, prominence: float = 0.01) -> np.ndarray:

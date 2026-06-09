@@ -323,3 +323,96 @@ def plot_power_factor_comparison(df: pd.DataFrame, time_col: str, pf_target: flo
     
     return fig
 
+
+def plot_daily_peak_energy(df_daily: pd.DataFrame, mean_val: float, p95_val: float):
+    """
+    Plots the daily peak energy consumption (kWh) over the period.
+    Includes reference lines for average and P95.
+    """
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=df_daily['date'],
+        y=df_daily['energy_peak_kwh'],
+        name="Energia Consumida (kWh)",
+        marker_color='#ff0055',
+        opacity=0.8
+    ))
+    
+    fig.add_hline(
+        y=mean_val,
+        line_dash="dash",
+        line_color="#00ffcc",
+        annotation_text=f"Média: {mean_val:.1f} kWh",
+        annotation_position="top left"
+    )
+    
+    fig.add_hline(
+        y=p95_val,
+        line_dash="dot",
+        line_color="#ffcc00",
+        annotation_text=f"P95: {p95_val:.1f} kWh",
+        annotation_position="top right"
+    )
+    
+    fig.update_layout(
+        title="Consumo Diário de Energia na Ponta",
+        xaxis_title="Data",
+        yaxis_title="Energia (kWh)",
+        template="plotly_dark",
+        height=400,
+        margin=dict(l=20, r=20, t=60, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    
+    return fig
+
+
+def plot_daily_peak_power(df_daily: pd.DataFrame, mean_val: float, p95_val: float):
+    """
+    Plots the daily peak power (kW) registered during peak hours.
+    Includes reference lines for average and P95.
+    """
+    fig = go.Figure()
+    
+    power_kw = df_daily['power_max_peak_w'] / 1000.0
+    mean_kw = mean_val / 1000.0
+    p95_kw = p95_val / 1000.0
+    
+    fig.add_trace(go.Bar(
+        x=df_daily['date'],
+        y=power_kw,
+        name="Pico de Potência (kW)",
+        marker_color='#ffcc00',
+        opacity=0.8
+    ))
+    
+    fig.add_hline(
+        y=mean_kw,
+        line_dash="dash",
+        line_color="#00ffcc",
+        annotation_text=f"Média: {mean_kw:.1f} kW",
+        annotation_position="top left"
+    )
+    
+    fig.add_hline(
+        y=p95_kw,
+        line_dash="dot",
+        line_color="#ff0055",
+        annotation_text=f"P95: {p95_kw:.1f} kW",
+        annotation_position="top right"
+    )
+    
+    fig.update_layout(
+        title="Picos Diários de Potência na Ponta",
+        xaxis_title="Data",
+        yaxis_title="Potência (kW)",
+        template="plotly_dark",
+        height=400,
+        margin=dict(l=20, r=20, t=60, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    
+    return fig
+
+

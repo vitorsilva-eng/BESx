@@ -1,0 +1,72 @@
+{
+    "timestamp": "2026-06-01 22:57:50",
+    "steps": [
+        {
+            "step": "1. Regras do Local",
+            "status": "PASS",
+            "titles": [
+                "🔋 BESx Simulator",
+                "📋 Passo 1: Regras do Local e Estratégia EMS"
+            ],
+            "errors": [],
+            "console_errors": [],
+            "screenshot": "scratch/audit_results/step1.png"
+        },
+        {
+            "step": "2. Escolha da Bateria",
+            "status": "PASS",
+            "titles": [
+                "🔋 BESx Simulator",
+                "🔋 Passo 2: Hardware da Bateria"
+            ],
+            "errors": [],
+            "console_errors": [],
+            "screenshot": "scratch/audit_results/step2.png"
+        },
+        {
+            "step": "3. Simulação Física",
+            "status": "PASS",
+            "titles": [
+                "🔋 BESx Simulator",
+                "⚙️ Passo 3: Execução da Simulação"
+            ],
+            "errors": [],
+            "console_errors": [],
+            "screenshot": "scratch/audit_results/step3.png"
+        },
+        {
+            "step": "4. Resultados",
+            "status": "PASS",
+            "titles": [
+                "🔋 BESx Simulator",
+                "📊 Passo 4: Resultados da Simulação"
+            ],
+            "errors": [],
+            "console_errors": [],
+            "screenshot": "scratch/audit_results/step4.png"
+        },
+        {
+            "step": "5. Comparativo A/B",
+            "status": "PASS",
+            "titles": [
+                "🔋 BESx Simulator",
+                "📈 Passo 5: Comparativo de Simulações"
+            ],
+            "errors": [],
+            "console_errors": [],
+            "screenshot": "scratch/audit_results/step5.png"
+        },
+        {
+            "step": "6. Configurações",
+            "status": "PASS",
+            "titles": [
+                "🔋 BESx Simulator",
+                "⚙️ Passo 6: Configurações de Engenharia"
+            ],
+            "errors": [],
+            "console_errors": [],
+            "screenshot": "scratch/audit_results/step6.png"
+        }
+    ],
+    "success": true
+}

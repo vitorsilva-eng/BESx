@@ -177,7 +177,8 @@ def render_diff_table(df_all, selected_sims, snapshots):
         "C_Rate_Medio": "C-Rate Médio",
         "C_Rate_Max_Global": "C-Rate Máximo",
         "Fator_Severidade": "Fator de Severidade (σ)",
-        "RUL_Anos": "Longevidade (Anos RUL)"
+        "RUL_Anos": "RUL (Vida Restante em Anos)",
+        "Vida_Total_Estimada": "Vida Útil Total Estimada (Anos)"
     }
     
     rows = []
@@ -231,6 +232,22 @@ def render_diff_table(df_all, selected_sims, snapshots):
                         exp_cal=exp_cal,
                         dias_por_ano_avg=dias_ano
                     )
+                elif key == "Vida_Total_Estimada":
+                    last = df_sim.iloc[-1]
+                    snap = snapshots.get(sim_id, {})
+                    exp_cal = float(snap.get('modelo_degradacao', {}).get('calendario', {}).get('exp_cal', 0.5))
+                    dias_ano = float(snap.get('dados_entrada', {}).get('dias_por_ano_avg', 365.25))
+                    rul_anos = calcular_rul(
+                        soh_atual_perc=last['capacidade_restante'],
+                        dano_ciclo_medio=df_sim['dano_ciclos_mes'].mean(),
+                        dano_cal_medio=df_sim['dano_cal_mes'].mean(),
+                        acum_ciclo_atual=last['dano_ciclo_acum'],
+                        acum_cal_atual=last['dano_cal_acum'],
+                        exp_cal=exp_cal,
+                        dias_por_ano_avg=dias_ano
+                    )
+                    meses_simulados = len(df_sim)
+                    val = (meses_simulados / 12.0) + max(0.0, rul_anos)
                 else: 
                     val = df_sim.iloc[-1].get(key, "N/A")
             

@@ -6,6 +6,7 @@ import os
 import json
 import datetime
 import ast
+from typing import Optional
 from besx.config import CONFIGURACAO, ModeloDegradacaoConfig
 from besx.domain.models.degradation_model import calcular_fator_severidade, calcular_rul
 
@@ -96,15 +97,37 @@ def format_sim_name(sim_id):
         except: return sim_id
     return sim_id
 
-def render_metrics_row(df_results, throughput_mwh=0.0, energy_charge=0.0, energy_discharge=0.0, month_idx=None):
-    if df_results.empty: return
+def render_metrics_row(
+    df_results: pd.DataFrame,
+    throughput_mwh: float = 0.0,
+    energy_charge: float = 0.0,
+    energy_discharge: float = 0.0,
+    month_idx: Optional[int] = None
+) -> None:
+    """Renders the KPI metrics row for the selected focus month or final summary.
+
+    Args:
+        df_results: DataFrame containing simulation results per month.
+        throughput_mwh: Total accumulated throughput in MWh.
+        energy_charge: Total charging energy in kWh.
+        energy_discharge: Total discharging energy in kWh.
+        month_idx: The 0-based index of the focus month. If None, renders final summary.
+    """
+    if df_results.empty:
+        return
     
     if month_idx is None:
         target_data = df_results.iloc[-1]
         label_suffix = "(Final)"
+        delta_soh = target_data['capacidade_restante'] - 100.0
     else:
         target_data = df_results.iloc[month_idx]
         label_suffix = f"(Mês {month_idx + 1})"
+        if month_idx == 0:
+            delta_soh = target_data['capacidade_restante'] - 100.0
+        else:
+            prev_data = df_results.iloc[month_idx - 1]
+            delta_soh = target_data['capacidade_restante'] - prev_data['capacidade_restante']
     
     display_soh = target_data['capacidade_restante']
     
@@ -114,7 +137,7 @@ def render_metrics_row(df_results, throughput_mwh=0.0, energy_charge=0.0, energy
     with cols1[0]:
         render_ev_battery(display_soh, label="SOH " + label_suffix)
 
-    cols1[1].metric(f"SOH {label_suffix}", f"{target_data['capacidade_restante']:.2f}%", f"{target_data['capacidade_restante'] - 100:.2f}%")
+    cols1[1].metric(f"SOH {label_suffix}", f"{target_data['capacidade_restante']:.2f}%", f"{delta_soh:.2f}%")
     
     with cols1[2]:
         dano_mes = df_results['dano_ciclos_mes'].mean() + df_results['dano_cal_mes'].mean() if month_idx is None else (target_data.get('dano_ciclos_mes', 0) + target_data.get('dano_cal_mes', 0))
@@ -126,7 +149,7 @@ def render_metrics_row(df_results, throughput_mwh=0.0, energy_charge=0.0, energy
         n_meses = target_data['mes']
         if n_meses > 0:
             if display_soh <= 80.01:
-                st.metric("Vida Útil (RUL)", "Limite (EOL)", "-20%")
+                st.metric("RUL (Vida Restante)", "Limite (EOL)", "-20%")
             else:
                 # Cálculo de RUL Não-Linear Otimizado
                 d_cic_mean = df_results['dano_ciclos_mes'].mean()
@@ -146,9 +169,19 @@ def render_metrics_row(df_results, throughput_mwh=0.0, energy_charge=0.0, energy
                 )
                 
                 label_rul = f"{max(0, rul_anos):.1f} anos" if rul_anos < 50 else "> 50 anos"
-                st.metric("Vida Útil (RUL)", label_rul)
+                
+                # Exibir Vida Útil Total Estimada para evitar mal-entendidos
+                anos_simulados = n_meses / 12.0
+                vida_total_estimada = anos_simulados + max(0.0, rul_anos)
+                
+                st.metric(
+                    label="RUL (Vida Restante)", 
+                    value=label_rul,
+                    delta=f"Vida Total: {vida_total_estimada:.1f} anos",
+                    delta_color="normal"
+                )
         else: 
-            st.metric("Vida Útil (RUL)", "---")
+            st.metric("RUL (Vida Restante)", "---")
 
 
     cols2[0].metric("Throughput (MWh)", f"{throughput_mwh:.3f}")
@@ -254,7 +287,22 @@ def render_view_degradation(df_results, month_idx=None, key_suffix=""):
                 fig.update_layout(title="Matriz de Fadiga", height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color=THEME_COLORS["TEXT"]))
                 st.plotly_chart(fig, width="stretch", key=f"rf_scatter_{key_suffix}")
 
-def render_view_operational(df_results, df_soc_mes, df_input_mes, month_idx=None, key_suffix=""):
+def render_view_operational(
+    df_results: pd.DataFrame,
+    df_soc_mes: pd.DataFrame,
+    df_input_mes: pd.DataFrame,
+    month_idx: Optional[int] = None,
+    key_suffix: str = ""
+) -> None:
+    """Renders the detailed operational time-series charts for electrical analysis.
+
+    Args:
+        df_results: DataFrame containing simulation results per month.
+        df_soc_mes: Optional DataFrame containing raw SOC telemetry.
+        df_input_mes: Optional DataFrame containing raw input data.
+        month_idx: The 0-based index of the focus month. If None, shows warning.
+        key_suffix: Unique suffix for Streamlit widgets to avoid duplicate IDs.
+    """
     if month_idx is None:
         st.info("Selecione um mês para análise operacional.")
         return
@@ -273,14 +321,147 @@ def render_view_operational(df_results, df_soc_mes, df_input_mes, month_idx=None
         st.warning("Séries temporais ausentes para este período.")
         return
 
+    # 1. Converter o eixo X de segundos para strings datetime ISO contínuas no mês focado
+    import datetime
+    ano_adicional = month_idx // 12
+    mes_ref = (month_idx % 12) + 1
+    ano_ref = 2026 + ano_adicional
+    data_base = datetime.datetime(ano_ref, mes_ref, 1, 0, 0, 0)
+    
+    x_datetime = [(data_base + datetime.timedelta(seconds=float(t))).strftime("%Y-%m-%d %H:%M:%S") for t in df_p['Tempo']]
+
     st.subheader(f"Análise Elétrica - Mês {month_idx + 1}")
-    x = df_p['Tempo'] / 3600.0
     from plotly.subplots import make_subplots
     fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.05, subplot_titles=("Tensão (V)", "Corrente (A)", "Potência (kW)", "SOC (%)"))
-    if 'Tensao_Term_V' in df_p.columns: fig.add_trace(go.Scatter(x=x, y=df_p['Tensao_Term_V'], name="Tensão", line_color=THEME_COLORS["SECONDARY"]), row=1, col=1)
-    if 'Corrente_A' in df_p.columns: fig.add_trace(go.Scatter(x=x, y=df_p['Corrente_A'], name="Corrente", line_color=THEME_COLORS["CYCLE"]), row=2, col=1)
-    if 'Potencia_CA_kW' in df_p.columns: fig.add_trace(go.Scatter(x=x, y=df_p['Potencia_CA_kW'], name="Potência", fill='tozeroy', line_color=THEME_COLORS["CALENDAR"]), row=3, col=1)
+    if 'Tensao_Term_V' in df_p.columns: fig.add_trace(go.Scatter(x=x_datetime, y=df_p['Tensao_Term_V'], name="Tensão", line_color=THEME_COLORS["SECONDARY"]), row=1, col=1)
+    if 'Corrente_A' in df_p.columns: fig.add_trace(go.Scatter(x=x_datetime, y=df_p['Corrente_A'], name="Corrente", line_color=THEME_COLORS["CYCLE"]), row=2, col=1)
+    if 'Potencia_CA_kW' in df_p.columns: fig.add_trace(go.Scatter(x=x_datetime, y=df_p['Potencia_CA_kW'], name="Potência", fill='tozeroy', line_color=THEME_COLORS["CALENDAR"]), row=3, col=1)
     soc = df_p['SOC'] * 100.0 if df_p['SOC'].max() <= 1.1 else df_p['SOC']
-    fig.add_trace(go.Scatter(x=x, y=soc, name="SOC", line_color=THEME_COLORS["PRIMARY"]), row=4, col=1)
+    fig.add_trace(go.Scatter(x=x_datetime, y=soc, name="SOC", line_color=THEME_COLORS["PRIMARY"]), row=4, col=1)
     fig.update_layout(height=700, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color=THEME_COLORS["TEXT"]), showlegend=False)
+    fig.update_xaxes(type="date", gridcolor=THEME_COLORS["GRID"])
     st.plotly_chart(fig, width="stretch", key=f"timeseries_{key_suffix}")
+
+    # Novo Gráfico Comparativo de Despacho e Intervenção de Carga
+    has_carga = 'Carga_W' in df_p.columns
+    has_ems = 'Potencia_W' in df_p.columns
+    has_sim = 'Potencia_CA_kW' in df_p.columns
+    
+    st.markdown("---")
+    st.subheader(f"Comparativo de Despacho e Intervenção - Mês {month_idx + 1}")
+    
+    if not (has_carga and has_ems):
+        st.info("💡 **Dica:** Para visualizar a comparação completa contendo a Potência Original do Cliente, a Potência com a Bateria e a Potência Disponível (EMS), lembre-se de re-executar o Passo 1 (Gerar Preview e Injetar) e o Passo 3 (Simular) com a nova versão do motor.")
+    
+    st.markdown(
+        "Este gráfico compara a demanda original do cliente com o comportamento do sistema após a intervenção "
+        "do BESS, exibindo o setpoint desejado do EMS, a potência real simulada e o respectivo SOC da bateria."
+    )
+    
+    from plotly.subplots import make_subplots
+    fig_comp = make_subplots(specs=[[{"secondary_y": True}]])
+    
+    # Destaque do Horário de Ponta (18h-21h nos dias úteis)
+    dias_unicos = sorted(list(set([dt.split(" ")[0] for dt in x_datetime])))
+    shapes = []
+    for dia_str in dias_unicos:
+        partes = [int(p) for p in dia_str.split("-")]
+        dia_obj = datetime.date(partes[0], partes[1], partes[2])
+        if dia_obj.weekday() < 5: # Segunda a Sexta
+            t_start = f"{dia_str} 18:00:00"
+            t_end = f"{dia_str} 21:00:00"
+            
+            shapes.append(dict(
+                type="rect",
+                xref="x",
+                yref="paper",
+                x0=t_start,
+                x1=t_end,
+                y0=0,
+                y1=1,
+                fillcolor="rgba(255, 0, 85, 0.08)", # Rosa/Magenta Neon translúcido para destaque sutil
+                line_width=0,
+                layer="below"
+            ))
+            
+    # Trace fictício apenas para exibir o Destaque do Horário de Ponta na legenda
+    fig_comp.add_trace(go.Scatter(
+        x=[None], y=[None],
+        mode="markers",
+        marker=dict(color="rgba(255, 0, 85, 0.25)", symbol="square", size=10),
+        name="Horário de Ponta (18h-21h)",
+        showlegend=True
+    ), secondary_y=False)
+    
+    # 1. Potência Original do Cliente
+    if has_carga:
+        fig_comp.add_trace(go.Scatter(
+            x=x_datetime, y=df_p['Carga_W'] / 1000.0,
+            name="Potência original do cliente",
+            line=dict(color='#5072FF', width=2),
+            opacity=0.6
+        ), secondary_y=False)
+        
+    # 2. Potência com a Bateria (Demanda líquida vista pela rede)
+    if has_carga and has_sim:
+        pot_com_bateria = (df_p['Carga_W'] / 1000.0) + df_p['Potencia_CA_kW']
+        fig_comp.add_trace(go.Scatter(
+            x=x_datetime, y=pot_com_bateria,
+            name="Potência com a Bateria",
+            line=dict(color='#00ffcc', width=2.5)
+        ), secondary_y=False)
+        
+    # 3. Potência Disponível para a bateria (Setpoint EMS desejado)
+    if has_ems:
+        fig_comp.add_trace(go.Scatter(
+            x=x_datetime, y=df_p['Potencia_W'] / 1000.0,
+            name="Potência Disponível para a bateria",
+            line=dict(color='#ffaa00', width=1.5, dash='dash')
+        ), secondary_y=False)
+        
+    # 4. Potência da Bateria (Potência CA Simulada real)
+    if has_sim:
+        fig_comp.add_trace(go.Scatter(
+            x=x_datetime, y=df_p['Potencia_CA_kW'],
+            name="Potência da Bateria",
+            fill='tozeroy',
+            line=dict(color='#ff0055', width=1.8)
+        ), secondary_y=False)
+        
+    # 5. SOC da Bateria (Eixo Y Secundário à Direita)
+    if has_sim:
+        soc_values = df_p['SOC'] * 100.0 if df_p['SOC'].max() <= 1.1 else df_p['SOC']
+        fig_comp.add_trace(go.Scatter(
+            x=x_datetime, y=soc_values,
+            name="SOC Bateria (%)",
+            line=dict(color='#00f2ff', width=2),
+            opacity=0.85
+        ), secondary_y=True)
+        
+    fig_comp.update_layout(
+        height=500,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=THEME_COLORS["TEXT"]),
+        xaxis=dict(gridcolor=THEME_COLORS["GRID"], title="Dia e Horário", type="date"),
+        yaxis=dict(gridcolor=THEME_COLORS["GRID"], title="Potência (kW)"),
+        yaxis2=dict(
+            title="SOC (%)", 
+            overlaying='y', 
+            side='right', 
+            range=[0, 105],
+            gridcolor='rgba(0,0,0,0)' # Remove linhas de grade secundárias para manter o gráfico limpo
+        ),
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.05,
+            xanchor="center",
+            x=0.5
+        ),
+        shapes=shapes,
+        margin=dict(l=20, r=20, t=80, b=20)
+    )
+    
+    st.plotly_chart(fig_comp, width="stretch", key=f"dispatch_comp_{key_suffix}")
