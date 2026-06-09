@@ -484,8 +484,6 @@ def render_step_rules():
             if metrics.dt_min > 60:
                 st.warning("⚠️ Resolução baixa detectada (>60 min). Os cálculos de picos podem estar subestimados.")
             
-            st.plotly_chart(plot_energy_balance(df_plot, time_col), width='stretch', key="chart_energy_balance_t5")️ Resolução baixa detectada (>60 min). Os cálculos de picos podem estar subestimados.")
-            
             st.plotly_chart(plot_energy_balance(df_plot, time_col), width='stretch', key="chart_energy_balance_t5")
 
         st.markdown("---")
