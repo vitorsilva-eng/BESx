@@ -20,7 +20,6 @@
   [ ] Controle de Frequência
   [ ] Afundamento de Tensão
 
-- Será que a defasagem impacta na vida util da bateria? - Para efeito desse artigo, ignorar.
 - Coletar artigos de publicação no CBA (e qual mais?) com aplicação de baterias
 
 ## Notas de reunião

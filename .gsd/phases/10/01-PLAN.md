@@ -11,9 +11,9 @@ autonomous: true
 must_haves:
   truths:
     - "Modelos Pydantic contêm parâmetros financeiros no config"
-    - "Cálculos de VPL, TIR e Payback funcionam corretamente sem dependências externas"
+    - "Cálculos de VPL, TIR, Payback e LCOS funcionam corretamente sem dependências externas"
     - "Cálculo de faturamento do Grupo A e multa de reativo validado"
-  artifacts:
+  Artifacts:
     - "src/besx/application/analysis/financial_analyzer.py existe"
     - "tests/test_financial.py existe"
 ---
@@ -55,17 +55,18 @@ Load for context:
     Implementar a classe `FinancialAnalyzer` que calcula as faturas sem BESS (Referência) e com BESS (Real).
     Calcular a multa de reativos excedentes se FP < 0.92 (conforme ANEEL).
     Projetar o fluxo de caixa anual descontado aplicando OPEX de manutenção (1.5% do CAPEX inicial, reajustado), Depreciação (10% ao ano linear) e calculando VPL, TIR (via Newton-Raphson com fallback e tratamento para N/A) e Paybacks.
+    Calcular o LCOS (Levelized Cost of Storage) considerando a soma descontada do CAPEX, OPEX de manutenção e custo de carregamento (energia de carga * tarifa fora de ponta reajustada), dividida pela soma descontada da energia descarregada da bateria.
     AVOID: Importar bibliotecas como numpy_financial que violam a stack limpa. Usar a implementação nativa testada.
   </action>
   <verify>pytest tests/test_financial.py</verify>
-  <done>Engine de cálculo finalizada com cobertura total de fórmulas.</done>
+  <done>Engine de cálculo finalizada com cobertura total de fórmulas e LCOS.</done>
 </task>
 
 <task type="auto">
   <name>Write Core Financial Unit Tests</name>
   <files>tests/test_financial.py</files>
   <action>
-    Escrever testes unitários rigorosos para a classe `FinancialAnalyzer` cobrindo o cálculo de faturas Azul/Verde, economia de reativos, cálculo de TIR (casos normais e casos sem convergência que geram "N/A"), VPL e Paybacks.
+    Escrever testes unitários rigorosos para a classe `FinancialAnalyzer` cobrindo o cálculo de faturas Azul/Verde, economia de reativos, cálculo de TIR (casos normais e casos sem convergência que geram "N/A"), VPL, Paybacks e LCOS.
     AVOID: Mockagem incompleta de perfis de telemetria. Usar dados gerados programaticamente.
   </action>
   <verify>pytest tests/test_financial.py</verify>
