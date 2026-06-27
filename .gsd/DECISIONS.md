@@ -28,10 +28,13 @@
 ### Scope
 - **Projeção e Degradação**: Será adotada a Opção A, ou seja, a projeção financeira cobrirá estritamente o prazo simulado fisicamente pelo usuário, permitindo o acoplamento exato da degradação (SOH) calculada pelo motor.
 - **Estrutura Tarifária**: Desconsiderar bandeiras tarifárias e assumir que as tarifas inseridas pelo usuário já contêm todos os impostos.
-- **Multa por Reativos Excedentes**: A engine financeira calculará ativamente a multa por reativo excedente (faturamento com base em FP < 0.92, conforme regulação da ANEEL) e contabilizará a economia correspondente quando a estratégia de PFC estiver ativa.
+- **Multa por Reativos Excedentes**: Cálculo com base na fórmula regulatória horária oficial da ANEEL (\(C_{excedente} = E_{ativa} \times (0.92/FP - 1) \times T_{energia}\)) para cada hora em que \(FP < 0.92\), contabilizando a economia correspondente quando a estratégia de PFC estiver ativa.
 - **Depreciação e OPEX**:
   - **Depreciação**: Taxa linear padrão de **10% ao ano** sobre o CAPEX inicial (vida útil de 10 anos).
   - **Manutenção (OPEX)**: Custo anual padrão de **1.5% do CAPEX inicial** ao ano, reajustado pela inflação.
+- **Re-CAPEX (Troca de Inversores)**: Incluir o parâmetro de Re-CAPEX no Ano 10 (padrão de 15% do CAPEX inicial) e aplicá-lo se a simulação durar 10 anos ou mais.
+- **Valor Contábil Residual**: Exibido apenas de forma informativa no painel final e na tabela anual, sem ser somado ao VPL.
+
 
 ### Approach
 - **Custos do BESS (CAPEX/OPEX)**: Inseridos na interface do Passo 2 (Hardware).
