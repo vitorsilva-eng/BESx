@@ -61,3 +61,15 @@
 - [x] Integrate Combined strategy UI input & configuration inside `step_rules.py`
 - [x] Add extensive visual reporting showing Combined actions in Streamlit
 
+---
+
+### Phase 10: Financial Analysis Implementation
+**Status**: ⬜ Not Started
+**Objective**: Implement financial analysis for BESS simulation, including CAPEX/OPEX costs, energy and demand tariffs, and inflation/financial adjustments to compute key indicators (NPV, IRR, Payback).
+**Depends on**: Phase 9
+
+**Tasks**:
+- [ ] TBD (run /plan 10 to create)
+
+**Verification**:
+- TBD
